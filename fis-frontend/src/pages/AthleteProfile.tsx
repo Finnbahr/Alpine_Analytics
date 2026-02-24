@@ -6,6 +6,7 @@ import {
   getAthleteMomentum,
   getAthleteCourses,
   getAthleteStrokesGained,
+  getAthleteStrokesGainedBib,
   getAthleteRegression,
   getAthleteCourseTraits,
 } from '../services/api';
@@ -25,11 +26,17 @@ export default function AthleteProfile() {
   const [momentum, setMomentum] = useState<any[]>([]);
   const [courses, setCourses] = useState<any[]>([]);
   const [strokesGained, setStrokesGained] = useState<any[]>([]);
+  const [strokesGainedBib, setStrokesGainedBib] = useState<any[]>([]);
   const [regression, setRegression] = useState<any>(null);
   const [courseTraits, setCourseTraits] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'races' | 'momentum' | 'performance' | 'course-analysis' | 'courses'>('races');
+
+  // Filters
+  const [selectedYear, setSelectedYear] = useState<string>('');
+  const [selectedMonth, setSelectedMonth] = useState<string>('');
+  const [selectedDiscipline, setSelectedDiscipline] = useState<string>('');
 
   useEffect(() => {
     const fetchData = async () => {
@@ -73,6 +80,14 @@ export default function AthleteProfile() {
         } catch (err) {
           console.warn('No strokes gained data available');
           setStrokesGained([]);
+        }
+
+        try {
+          const strokesGainedBibData = await getAthleteStrokesGainedBib(fisCode, { limit: 50 });
+          setStrokesGainedBib(strokesGainedBibData.data || []);
+        } catch (err) {
+          console.warn('No strokes gained bib data available');
+          setStrokesGainedBib([]);
         }
 
         try {
@@ -177,24 +192,86 @@ export default function AthleteProfile() {
         {/* Current Tier */}
         {profile.current_tier && (
           <div className="mt-6 pt-6 border-t border-gray-800">
-            <div className="flex items-center justify-between">
-              <div>
-                <span className="text-sm text-gray-400">Current Tier ({profile.current_tier.year}):</span>
-                <span className="ml-2 font-bold text-primary-400">{profile.current_tier.tier}</span>
-                <span className="ml-2 text-gray-400">in {profile.current_tier.discipline}</span>
-              </div>
-              <div className="text-right">
-                <div className="text-sm text-gray-400">Season Stats</div>
-                <div className="text-lg font-semibold text-gray-100">
-                  {profile.current_tier.avg_fis_points.toFixed(1)} pts
-                  <span className="text-sm text-gray-400 ml-2">
-                    ({profile.current_tier.race_count} races)
-                  </span>
-                </div>
-              </div>
+            <div>
+              <span className="text-sm text-gray-400">Current Tier ({profile.current_tier.year}):</span>
+              <span className="ml-2 font-bold text-primary-400">{profile.current_tier.tier}</span>
+              <span className="ml-2 text-gray-400">in {profile.current_tier.discipline}</span>
             </div>
           </div>
         )}
+      </div>
+
+      {/* Filters */}
+      <div className="mb-6 card">
+        <div className="flex flex-wrap gap-4 items-center">
+          <div className="flex-1 min-w-0">
+            <label className="block text-xs font-medium text-gray-400 mb-1">
+              Year
+            </label>
+            <select
+              value={selectedYear}
+              onChange={(e) => setSelectedYear(e.target.value)}
+              className="input w-full sm:w-32 text-sm py-1.5"
+            >
+              <option value="">All Years</option>
+              {Array.from(new Set(races.map(r => new Date(r.date).getFullYear())))
+                .sort((a, b) => b - a)
+                .map(year => (
+                  <option key={year} value={year}>{year}</option>
+                ))}
+            </select>
+          </div>
+
+          <div className="flex-1 min-w-0">
+            <label className="block text-xs font-medium text-gray-400 mb-1">
+              Month
+            </label>
+            <select
+              value={selectedMonth}
+              onChange={(e) => setSelectedMonth(e.target.value)}
+              className="input w-full sm:w-32 text-sm py-1.5"
+            >
+              <option value="">All Months</option>
+              {['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'].map((month, idx) => (
+                <option key={month} value={idx + 1}>{month}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex-1 min-w-0">
+            <label className="block text-xs font-medium text-gray-400 mb-1">
+              Discipline
+            </label>
+            <select
+              value={selectedDiscipline}
+              onChange={(e) => setSelectedDiscipline(e.target.value)}
+              className="input w-full sm:w-40 text-sm py-1.5"
+            >
+              <option value="">All Disciplines</option>
+              {Array.from(new Set(races.map(r => r.discipline)))
+                .sort()
+                .map(disc => (
+                  <option key={disc} value={disc}>{disc}</option>
+                ))}
+            </select>
+          </div>
+
+          {(selectedYear || selectedMonth || selectedDiscipline) && (
+            <div className="flex-shrink-0">
+              <label className="block text-xs font-medium text-transparent mb-1">Clear</label>
+              <button
+                onClick={() => {
+                  setSelectedYear('');
+                  setSelectedMonth('');
+                  setSelectedDiscipline('');
+                }}
+                className="btn-secondary text-sm py-1.5 px-3"
+              >
+                Clear Filters
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Tabs */}
@@ -234,52 +311,70 @@ export default function AthleteProfile() {
       </div>
 
       {/* Tab Content */}
-      {activeTab === 'races' && (
-        <div className="card">
-          <h2 className="text-2xl font-bold text-gray-100 mb-6">Recent Race Results</h2>
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-gray-800">
-                  <th className="text-left py-3 px-4 font-semibold text-gray-100">Date</th>
-                  <th className="text-left py-3 px-4 font-semibold text-gray-100">Location</th>
-                  <th className="text-left py-3 px-4 font-semibold text-gray-100">Discipline</th>
-                  <th className="text-right py-3 px-4 font-semibold text-gray-100">Rank</th>
-                  <th className="text-right py-3 px-4 font-semibold text-gray-100">FIS Points</th>
-                  <th className="text-right py-3 px-4 font-semibold text-gray-100">Z-Score</th>
-                </tr>
-              </thead>
-              <tbody>
-                {races.map((race, idx) => (
-                  <tr key={idx} className="border-b border-gray-800 hover:bg-gray-800/50">
-                    <td className="py-3 px-4 text-gray-400">
-                      {new Date(race.date).toLocaleDateString()}
-                    </td>
-                    <td className="py-3 px-4">
-                      <div className="font-medium text-gray-100">{race.location}</div>
-                      <div className="text-sm text-gray-500">{race.country}</div>
-                    </td>
-                    <td className="py-3 px-4 text-gray-400">{race.discipline}</td>
-                    <td className="py-3 px-4 text-right font-semibold text-gray-100">
-                      {race.rank}
-                    </td>
-                    <td className="py-3 px-4 text-right text-gray-300">
-                      {race.fis_points?.toFixed(1) || 'N/A'}
-                    </td>
-                    <td className="py-3 px-4 text-right">
-                      <span className={`font-semibold ${
-                        race.race_z_score > 0 ? 'text-emerald-400' : 'text-red-400'
-                      }`}>
-                        {race.race_z_score?.toFixed(2) || 'N/A'}
-                      </span>
-                    </td>
+      {activeTab === 'races' && (() => {
+        const filteredRaces = races.filter(race => {
+          const date = new Date(race.date);
+          const year = date.getFullYear().toString();
+          const month = (date.getMonth() + 1).toString();
+          return (
+            (!selectedYear || year === selectedYear) &&
+            (!selectedMonth || month === selectedMonth) &&
+            (!selectedDiscipline || race.discipline === selectedDiscipline)
+          );
+        });
+
+        return (
+          <div className="card">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-2xl font-bold text-gray-100">Race Results</h2>
+              <div className="text-sm text-gray-400">
+                Showing {filteredRaces.length} of {races.length} races
+              </div>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-gray-800">
+                    <th className="text-left py-3 px-4 font-semibold text-gray-100">Date</th>
+                    <th className="text-left py-3 px-4 font-semibold text-gray-100">Location</th>
+                    <th className="text-left py-3 px-4 font-semibold text-gray-100">Discipline</th>
+                    <th className="text-right py-3 px-4 font-semibold text-gray-100">Rank</th>
+                    <th className="text-right py-3 px-4 font-semibold text-gray-100">FIS Points</th>
+                    <th className="text-right py-3 px-4 font-semibold text-gray-100">Z-Score</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {filteredRaces.map((race, idx) => (
+                    <tr key={idx} className="border-b border-gray-800 hover:bg-gray-800/50">
+                      <td className="py-3 px-4 text-gray-400">
+                        {new Date(race.date).toLocaleDateString()}
+                      </td>
+                      <td className="py-3 px-4">
+                        <div className="font-medium text-gray-100">{race.location}</div>
+                        <div className="text-sm text-gray-500">{race.country}</div>
+                      </td>
+                      <td className="py-3 px-4 text-gray-400">{race.discipline}</td>
+                      <td className="py-3 px-4 text-right font-semibold text-gray-100">
+                        {race.rank}
+                      </td>
+                      <td className="py-3 px-4 text-right text-gray-300">
+                        {race.fis_points?.toFixed(1) || 'N/A'}
+                      </td>
+                      <td className="py-3 px-4 text-right">
+                        <span className={`font-semibold ${
+                          race.race_z_score > 0 ? 'text-emerald-400' : 'text-red-400'
+                        }`}>
+                          {race.race_z_score?.toFixed(2) || 'N/A'}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {activeTab === 'momentum' && (
         <div className="space-y-6">
@@ -334,7 +429,28 @@ export default function AthleteProfile() {
       {activeTab === 'performance' && (
         <div className="space-y-6">
           {strokesGained.length > 0 ? (
-            <StrokesGainedChart data={strokesGained} />
+            <StrokesGainedChart
+              strokesGainedData={strokesGained.filter(sg => {
+                const date = new Date(sg.date);
+                const year = date.getFullYear().toString();
+                const month = (date.getMonth() + 1).toString();
+                return (
+                  (!selectedYear || year === selectedYear) &&
+                  (!selectedMonth || month === selectedMonth) &&
+                  (!selectedDiscipline || sg.discipline === selectedDiscipline)
+                );
+              })}
+              bibData={strokesGainedBib.filter(bib => {
+                const date = new Date(bib.date);
+                const year = date.getFullYear().toString();
+                const month = (date.getMonth() + 1).toString();
+                return (
+                  (!selectedYear || year === selectedYear) &&
+                  (!selectedMonth || month === selectedMonth) &&
+                  (!selectedDiscipline || bib.discipline === selectedDiscipline)
+                );
+              })}
+            />
           ) : (
             <div className="card text-center py-12">
               <p className="text-gray-400">No performance data available for this athlete.</p>
