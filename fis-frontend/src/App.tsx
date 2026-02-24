@@ -5,7 +5,7 @@ import AthleteProfile from './pages/AthleteProfile';
 
 function App() {
   return (
-    <div className="min-h-screen bg-gray-950">
+    <div className="min-h-screen bg-black">
       <Header />
       <Routes>
         <Route path="/" element={<Dashboard />} />

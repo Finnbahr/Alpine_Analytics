@@ -35,8 +35,17 @@ export default function AthleteProfile() {
 
   // Filters
   const [selectedYear, setSelectedYear] = useState<string>('');
-  const [selectedMonth, setSelectedMonth] = useState<string>('');
   const [selectedDiscipline, setSelectedDiscipline] = useState<string>('');
+
+  // Filter function
+  const filterByYearAndDiscipline = (item: any) => {
+    const date = new Date(item.date);
+    const year = date.getFullYear().toString();
+    return (
+      (!selectedYear || year === selectedYear) &&
+      (!selectedDiscipline || item.discipline === selectedDiscipline)
+    );
+  };
 
   useEffect(() => {
     const fetchData = async () => {
@@ -202,16 +211,16 @@ export default function AthleteProfile() {
       </div>
 
       {/* Filters */}
-      <div className="mb-6 card">
+      <div className="mb-6 bg-black/40 border border-cyan-500/30 rounded-lg p-4 backdrop-blur-sm">
         <div className="flex flex-wrap gap-4 items-center">
           <div className="flex-1 min-w-0">
-            <label className="block text-xs font-medium text-gray-400 mb-1">
+            <label className="block text-xs font-medium text-cyan-400 mb-1.5 uppercase tracking-wider">
               Year
             </label>
             <select
               value={selectedYear}
               onChange={(e) => setSelectedYear(e.target.value)}
-              className="input w-full sm:w-32 text-sm py-1.5"
+              className="input w-full sm:w-32 text-sm py-2 bg-black/60 border-cyan-500/40 text-gray-100"
             >
               <option value="">All Years</option>
               {Array.from(new Set(races.map(r => new Date(r.date).getFullYear())))
@@ -223,29 +232,13 @@ export default function AthleteProfile() {
           </div>
 
           <div className="flex-1 min-w-0">
-            <label className="block text-xs font-medium text-gray-400 mb-1">
-              Month
-            </label>
-            <select
-              value={selectedMonth}
-              onChange={(e) => setSelectedMonth(e.target.value)}
-              className="input w-full sm:w-32 text-sm py-1.5"
-            >
-              <option value="">All Months</option>
-              {['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'].map((month, idx) => (
-                <option key={month} value={idx + 1}>{month}</option>
-              ))}
-            </select>
-          </div>
-
-          <div className="flex-1 min-w-0">
-            <label className="block text-xs font-medium text-gray-400 mb-1">
+            <label className="block text-xs font-medium text-cyan-400 mb-1.5 uppercase tracking-wider">
               Discipline
             </label>
             <select
               value={selectedDiscipline}
               onChange={(e) => setSelectedDiscipline(e.target.value)}
-              className="input w-full sm:w-40 text-sm py-1.5"
+              className="input w-full sm:w-48 text-sm py-2 bg-black/60 border-cyan-500/40 text-gray-100"
             >
               <option value="">All Disciplines</option>
               {Array.from(new Set(races.map(r => r.discipline)))
@@ -256,16 +249,15 @@ export default function AthleteProfile() {
             </select>
           </div>
 
-          {(selectedYear || selectedMonth || selectedDiscipline) && (
+          {(selectedYear || selectedDiscipline) && (
             <div className="flex-shrink-0">
-              <label className="block text-xs font-medium text-transparent mb-1">Clear</label>
+              <label className="block text-xs font-medium text-transparent mb-1.5">Clear</label>
               <button
                 onClick={() => {
                   setSelectedYear('');
-                  setSelectedMonth('');
                   setSelectedDiscipline('');
                 }}
-                className="btn-secondary text-sm py-1.5 px-3"
+                className="btn-secondary text-sm py-2 px-4 bg-black/60 border-cyan-500/40 hover:bg-cyan-500/20 hover:border-cyan-500"
               >
                 Clear Filters
               </button>
@@ -312,16 +304,7 @@ export default function AthleteProfile() {
 
       {/* Tab Content */}
       {activeTab === 'races' && (() => {
-        const filteredRaces = races.filter(race => {
-          const date = new Date(race.date);
-          const year = date.getFullYear().toString();
-          const month = (date.getMonth() + 1).toString();
-          return (
-            (!selectedYear || year === selectedYear) &&
-            (!selectedMonth || month === selectedMonth) &&
-            (!selectedDiscipline || race.discipline === selectedDiscipline)
-          );
-        });
+        const filteredRaces = races.filter(filterByYearAndDiscipline);
 
         return (
           <div className="card">
@@ -378,10 +361,10 @@ export default function AthleteProfile() {
 
       {activeTab === 'momentum' && (
         <div className="space-y-6">
-          <div className="card">
+          <div className="card bg-black/40 border-cyan-500/20">
             <h2 className="text-2xl font-bold text-gray-100 mb-6">Momentum Over Time</h2>
             <ResponsiveContainer width="100%" height={400}>
-              <LineChart data={momentum}>
+              <LineChart data={momentum.filter(filterByYearAndDiscipline)}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
                 <XAxis
                   dataKey="date"
@@ -430,26 +413,8 @@ export default function AthleteProfile() {
         <div className="space-y-6">
           {strokesGained.length > 0 ? (
             <StrokesGainedChart
-              strokesGainedData={strokesGained.filter(sg => {
-                const date = new Date(sg.date);
-                const year = date.getFullYear().toString();
-                const month = (date.getMonth() + 1).toString();
-                return (
-                  (!selectedYear || year === selectedYear) &&
-                  (!selectedMonth || month === selectedMonth) &&
-                  (!selectedDiscipline || sg.discipline === selectedDiscipline)
-                );
-              })}
-              bibData={strokesGainedBib.filter(bib => {
-                const date = new Date(bib.date);
-                const year = date.getFullYear().toString();
-                const month = (date.getMonth() + 1).toString();
-                return (
-                  (!selectedYear || year === selectedYear) &&
-                  (!selectedMonth || month === selectedMonth) &&
-                  (!selectedDiscipline || bib.discipline === selectedDiscipline)
-                );
-              })}
+              strokesGainedData={strokesGained.filter(filterByYearAndDiscipline)}
+              bibData={strokesGainedBib.filter(filterByYearAndDiscipline)}
             />
           ) : (
             <div className="card text-center py-12">
@@ -490,11 +455,13 @@ export default function AthleteProfile() {
         </div>
       )}
 
-      {activeTab === 'courses' && (
-        <div className="card">
+      {activeTab === 'courses' && (() => {
+        const filteredCourses = courses.filter(filterByYearAndDiscipline);
+        return (
+        <div className="card bg-black/40 border-cyan-500/20">
           <h2 className="text-2xl font-bold text-gray-100 mb-6">Performance by Course</h2>
           <ResponsiveContainer width="100%" height={400}>
-            <BarChart data={courses.slice(0, 15)}>
+            <BarChart data={filteredCourses.slice(0, 15)}>
               <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
               <XAxis
                 dataKey="location"
@@ -516,15 +483,15 @@ export default function AthleteProfile() {
           <div className="mt-6">
             <h3 className="font-semibold text-gray-100 mb-4">Top Courses</h3>
             <div className="grid md:grid-cols-2 gap-4">
-              {courses.slice(0, 6).map((course, idx) => (
-                <div key={idx} className="p-4 bg-gray-800 rounded-lg border border-gray-700">
+              {filteredCourses.slice(0, 6).map((course, idx) => (
+                <div key={idx} className="p-4 bg-black/60 rounded-lg border border-cyan-500/30">
                   <div className="flex items-center justify-between">
                     <div>
                       <div className="font-semibold text-gray-100">{course.location}</div>
                       <div className="text-sm text-gray-400">{course.discipline}</div>
                     </div>
                     <div className="text-right">
-                      <div className="font-bold text-primary-400">
+                      <div className="font-bold text-cyan-400">
                         {course.mean_race_z_score.toFixed(2)}
                       </div>
                       <div className="text-xs text-gray-500">{course.race_count} races</div>
@@ -535,7 +502,8 @@ export default function AthleteProfile() {
             </div>
           </div>
         </div>
-      )}
+        );
+      })()}
     </div>
   );
 }
