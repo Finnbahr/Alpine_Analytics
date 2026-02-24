@@ -5,12 +5,18 @@ import {
   getAthleteRaces,
   getAthleteMomentum,
   getAthleteCourses,
+  getAthleteStrokesGained,
+  getAthleteRegression,
+  getAthleteCourseTraits,
 } from '../services/api';
 import type { AthleteProfile as AthleteProfileType } from '../types';
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { TrophyIcon, FireIcon, MapPinIcon, ChartBarIcon } from '@heroicons/react/24/solid';
+import { TrophyIcon, FireIcon, MapPinIcon, ChartBarIcon, BeakerIcon, AcademicCapIcon } from '@heroicons/react/24/solid';
 import { PageLoader } from '../components/LoadingSpinner';
 import ErrorMessage from '../components/ErrorMessage';
+import StrokesGainedChart from '../components/charts/StrokesGainedChart';
+import RegressionChart from '../components/charts/RegressionChart';
+import CourseTraitsChart from '../components/charts/CourseTraitsChart';
 
 export default function AthleteProfile() {
   const { fisCode } = useParams<{ fisCode: string }>();
@@ -18,9 +24,12 @@ export default function AthleteProfile() {
   const [races, setRaces] = useState<any[]>([]);
   const [momentum, setMomentum] = useState<any[]>([]);
   const [courses, setCourses] = useState<any[]>([]);
+  const [strokesGained, setStrokesGained] = useState<any[]>([]);
+  const [regression, setRegression] = useState<any>(null);
+  const [courseTraits, setCourseTraits] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'races' | 'momentum' | 'courses'>('races');
+  const [activeTab, setActiveTab] = useState<'races' | 'momentum' | 'performance' | 'course-analysis' | 'courses'>('races');
 
   useEffect(() => {
     const fetchData = async () => {
@@ -56,6 +65,30 @@ export default function AthleteProfile() {
         } catch (err) {
           console.warn('No course performance data available');
           setCourses([]);
+        }
+
+        try {
+          const strokesGainedData = await getAthleteStrokesGained(fisCode, { limit: 50 });
+          setStrokesGained(strokesGainedData.data || []);
+        } catch (err) {
+          console.warn('No strokes gained data available');
+          setStrokesGained([]);
+        }
+
+        try {
+          const regressionData = await getAthleteRegression(fisCode);
+          setRegression(regressionData);
+        } catch (err) {
+          console.warn('No regression data available');
+          setRegression(null);
+        }
+
+        try {
+          const courseTraitsData = await getAthleteCourseTraits(fisCode);
+          setCourseTraits(courseTraitsData);
+        } catch (err) {
+          console.warn('No course traits data available');
+          setCourseTraits(null);
         }
       } catch (error) {
         console.error('Failed to fetch athlete profile:', error);
@@ -166,12 +199,12 @@ export default function AthleteProfile() {
 
       {/* Tabs */}
       <div className="mb-6 border-b border-gray-800">
-        <div className="flex space-x-8">
+        <div className="flex space-x-6 overflow-x-auto">
           <TabButton
             active={activeTab === 'races'}
             onClick={() => setActiveTab('races')}
             icon={<ChartBarIcon className="h-5 w-5" />}
-            label="Race History"
+            label="Races"
           />
           <TabButton
             active={activeTab === 'momentum'}
@@ -180,10 +213,22 @@ export default function AthleteProfile() {
             label="Momentum"
           />
           <TabButton
+            active={activeTab === 'performance'}
+            onClick={() => setActiveTab('performance')}
+            icon={<BeakerIcon className="h-5 w-5" />}
+            label="Performance"
+          />
+          <TabButton
+            active={activeTab === 'course-analysis'}
+            onClick={() => setActiveTab('course-analysis')}
+            icon={<AcademicCapIcon className="h-5 w-5" />}
+            label="Course Analysis"
+          />
+          <TabButton
             active={activeTab === 'courses'}
             onClick={() => setActiveTab('courses')}
             icon={<MapPinIcon className="h-5 w-5" />}
-            label="Course Performance"
+            label="Top Courses"
           />
         </div>
       </div>
@@ -283,6 +328,49 @@ export default function AthleteProfile() {
               </p>
             </div>
           </div>
+        </div>
+      )}
+
+      {activeTab === 'performance' && (
+        <div className="space-y-6">
+          {strokesGained.length > 0 ? (
+            <StrokesGainedChart data={strokesGained} />
+          ) : (
+            <div className="card text-center py-12">
+              <p className="text-gray-400">No performance data available for this athlete.</p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {activeTab === 'course-analysis' && (
+        <div className="space-y-6">
+          {regression && regression.data && regression.data.length > 0 ? (
+            <RegressionChart
+              data={regression.data}
+              discipline={regression.discipline || 'All'}
+            />
+          ) : (
+            <div className="card text-center py-12">
+              <p className="text-gray-400">No regression analysis available for this athlete.</p>
+            </div>
+          )}
+
+          {courseTraits && courseTraits.data && courseTraits.data.length > 0 ? (
+            <>
+              {/* Group by trait */}
+              {Array.from(new Set(courseTraits.data.map((d: any) => d.trait))).map((trait: any) => {
+                const traitData = courseTraits.data.filter((d: any) => d.trait === trait);
+                return traitData.length > 0 ? (
+                  <CourseTraitsChart key={trait} data={traitData} trait={trait} />
+                ) : null;
+              })}
+            </>
+          ) : (
+            <div className="card text-center py-12 mt-6">
+              <p className="text-gray-400">No course trait analysis available for this athlete.</p>
+            </div>
+          )}
         </div>
       )}
 
