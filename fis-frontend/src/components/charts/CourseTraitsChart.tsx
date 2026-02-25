@@ -52,10 +52,10 @@ export default function CourseTraitsChart({ data, trait }: Props) {
   };
 
   return (
-    <div className="card">
+    <div className="card bg-black/40 border-cyan-500/20">
       <div className="mb-4">
         <h3 className="text-xl font-bold text-gray-100">Performance by {formatTrait(trait)}</h3>
-        <p className="text-sm text-gray-400 mt-1">Average Z-Score across quintiles</p>
+        <p className="text-sm text-cyan-400 mt-1">Average Z-Score across quintiles (Q1 = lowest, Q5 = highest)</p>
       </div>
       <ResponsiveContainer width="100%" height={350}>
         <BarChart data={chartData}>
@@ -91,8 +91,8 @@ export default function CourseTraitsChart({ data, trait }: Props) {
       </ResponsiveContainer>
       <div className="mt-4 grid grid-cols-5 gap-2 text-xs">
         {chartData.map((item, idx) => (
-          <div key={idx} className="p-2 bg-gray-800 rounded border border-gray-700">
-            <div className="font-semibold text-gray-100">{item.quintile}</div>
+          <div key={idx} className="p-2 bg-black/60 rounded border border-cyan-500/30">
+            <div className="font-semibold text-cyan-400">{item.quintile}</div>
             <div className="text-gray-400">{item.race_count} races</div>
             <div className="text-gray-500 truncate" title={item.label}>{item.label}</div>
           </div>

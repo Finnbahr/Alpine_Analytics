@@ -30,7 +30,8 @@ export default function RegressionChart({ data, discipline }: Props) {
     .map(d => ({
       ...d,
       name: formatCharacteristic(d.characteristic),
-      coefficient: Number(d.coefficient.toFixed(4))
+      coefficient: Number(d.coefficient.toFixed(4)),
+      r_squared: d.r_squared
     }))
     .sort((a, b) => Math.abs(b.coefficient) - Math.abs(a.coefficient))
     .slice(0, 6);
@@ -40,11 +41,11 @@ export default function RegressionChart({ data, discipline }: Props) {
   };
 
   return (
-    <div className="card">
+    <div className="card bg-black/40 border-cyan-500/20">
       <div className="mb-4">
         <h3 className="text-xl font-bold text-gray-100">Course Characteristic Impact</h3>
-        <p className="text-sm text-gray-400 mt-1">
-          {discipline} • R² = {data[0]?.r_squared?.toFixed(3) || 'N/A'}
+        <p className="text-sm text-cyan-400 mt-1">
+          {discipline} • Each factor shows its correlation with performance
         </p>
       </div>
       <ResponsiveContainer width="100%" height={400}>
@@ -63,7 +64,13 @@ export default function RegressionChart({ data, discipline }: Props) {
             tick={{ fontSize: 12 }}
           />
           <Tooltip
-            formatter={(value: number) => value.toFixed(4)}
+            formatter={(value: number, name: string, props: any) => {
+              const r2 = props.payload.r_squared;
+              return [
+                `${value.toFixed(4)} (R² = ${r2?.toFixed(3) || 'N/A'})`,
+                'Coefficient'
+              ];
+            }}
             contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #374151', borderRadius: '0.5rem' }}
             labelStyle={{ color: '#f3f4f6' }}
           />
@@ -76,12 +83,15 @@ export default function RegressionChart({ data, discipline }: Props) {
           </Bar>
         </BarChart>
       </ResponsiveContainer>
-      <div className="mt-4 text-sm text-gray-400 space-y-1">
+      <div className="mt-4 text-sm text-gray-400 space-y-2">
         <p>
-          <strong className="text-gray-300">Positive coefficients (green):</strong> Athlete performs better on courses with higher values
+          <strong className="text-emerald-400">Positive (green):</strong> Performs better when value is higher
         </p>
         <p>
-          <strong className="text-gray-300">Negative coefficients (red):</strong> Athlete performs better on courses with lower values
+          <strong className="text-red-400">Negative (red):</strong> Performs better when value is lower
+        </p>
+        <p>
+          <strong className="text-cyan-400">R² value:</strong> Shows how well each factor predicts performance (0-1, higher = stronger correlation)
         </p>
       </div>
     </div>

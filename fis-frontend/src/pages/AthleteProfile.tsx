@@ -125,6 +125,33 @@ export default function AthleteProfile() {
     fetchData();
   }, [fisCode]);
 
+  // Re-fetch aggregate data when discipline filter changes
+  useEffect(() => {
+    const fetchAggregateData = async () => {
+      if (!fisCode) return;
+
+      const params = selectedDiscipline ? { discipline: selectedDiscipline } : {};
+
+      try {
+        const regressionData = await getAthleteRegression(fisCode, params);
+        setRegression(regressionData);
+      } catch (err) {
+        console.warn('No regression data available for selected discipline');
+        setRegression(null);
+      }
+
+      try {
+        const courseTraitsData = await getAthleteCourseTraits(fisCode, params);
+        setCourseTraits(courseTraitsData);
+      } catch (err) {
+        console.warn('No course traits data available for selected discipline');
+        setCourseTraits(null);
+      }
+    };
+
+    fetchAggregateData();
+  }, [fisCode, selectedDiscipline]);
+
   if (loading) {
     return <PageLoader />;
   }
@@ -211,16 +238,29 @@ export default function AthleteProfile() {
       </div>
 
       {/* Filters */}
-      <div className="mb-6 bg-black/40 border border-cyan-500/30 rounded-lg p-4 backdrop-blur-sm">
-        <div className="flex flex-wrap gap-4 items-center">
-          <div className="flex-1 min-w-0">
-            <label className="block text-xs font-medium text-cyan-400 mb-1.5 uppercase tracking-wider">
+      <div className="mb-8 bg-gradient-to-br from-black/60 to-cyan-900/10 border border-cyan-500/40 rounded-xl p-6 backdrop-blur-md shadow-xl shadow-cyan-500/10">
+        <div className="flex items-center gap-3 mb-4">
+          <div className="h-8 w-1 bg-cyan-400 rounded-full"></div>
+          <h3 className="text-sm font-bold text-cyan-400 uppercase tracking-wider">Filters</h3>
+          {(selectedYear || selectedDiscipline) && (
+            <span className="text-xs text-gray-400 bg-cyan-500/10 px-2 py-0.5 rounded-full border border-cyan-500/30">
+              {[selectedYear, selectedDiscipline].filter(Boolean).length} active
+            </span>
+          )}
+        </div>
+
+        <div className="flex flex-wrap gap-4 items-end">
+          <div className="flex-1 min-w-[140px]">
+            <label className="block text-xs font-semibold text-cyan-300 mb-2 uppercase tracking-wider flex items-center gap-2">
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+              </svg>
               Year
             </label>
             <select
               value={selectedYear}
               onChange={(e) => setSelectedYear(e.target.value)}
-              className="input w-full sm:w-32 text-sm py-2 bg-black/60 border-cyan-500/40 text-gray-100"
+              className="w-full px-4 py-2.5 bg-black/70 border border-cyan-500/50 text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-cyan-400 focus:border-transparent transition-all hover:border-cyan-400 text-sm font-medium shadow-inner"
             >
               <option value="">All Years</option>
               {Array.from(new Set(races.map(r => new Date(r.date).getFullYear())))
@@ -231,14 +271,17 @@ export default function AthleteProfile() {
             </select>
           </div>
 
-          <div className="flex-1 min-w-0">
-            <label className="block text-xs font-medium text-cyan-400 mb-1.5 uppercase tracking-wider">
+          <div className="flex-1 min-w-[180px]">
+            <label className="block text-xs font-semibold text-cyan-300 mb-2 uppercase tracking-wider flex items-center gap-2">
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+              </svg>
               Discipline
             </label>
             <select
               value={selectedDiscipline}
               onChange={(e) => setSelectedDiscipline(e.target.value)}
-              className="input w-full sm:w-48 text-sm py-2 bg-black/60 border-cyan-500/40 text-gray-100"
+              className="w-full px-4 py-2.5 bg-black/70 border border-cyan-500/50 text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-cyan-400 focus:border-transparent transition-all hover:border-cyan-400 text-sm font-medium shadow-inner"
             >
               <option value="">All Disciplines</option>
               {Array.from(new Set(races.map(r => r.discipline)))
@@ -250,18 +293,18 @@ export default function AthleteProfile() {
           </div>
 
           {(selectedYear || selectedDiscipline) && (
-            <div className="flex-shrink-0">
-              <label className="block text-xs font-medium text-transparent mb-1.5">Clear</label>
-              <button
-                onClick={() => {
-                  setSelectedYear('');
-                  setSelectedDiscipline('');
-                }}
-                className="btn-secondary text-sm py-2 px-4 bg-black/60 border-cyan-500/40 hover:bg-cyan-500/20 hover:border-cyan-500"
-              >
-                Clear Filters
-              </button>
-            </div>
+            <button
+              onClick={() => {
+                setSelectedYear('');
+                setSelectedDiscipline('');
+              }}
+              className="px-5 py-2.5 bg-cyan-500/10 text-cyan-400 rounded-lg hover:bg-cyan-500/20 transition-all font-medium border border-cyan-500/40 hover:border-cyan-400 flex items-center gap-2 text-sm shadow-lg hover:shadow-cyan-500/20"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+              Clear
+            </button>
           )}
         </div>
       </div>
