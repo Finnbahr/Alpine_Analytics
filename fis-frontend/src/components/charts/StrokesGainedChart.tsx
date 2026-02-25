@@ -1,4 +1,4 @@
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, ComposedChart } from 'recharts';
+import { Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, ComposedChart } from 'recharts';
 
 interface StrokesGainedData {
   race_id: number;
@@ -53,8 +53,8 @@ export default function StrokesGainedChart({ strokesGainedData, bibData }: Props
             <YAxis stroke="#9ca3af" />
             <Tooltip
               labelFormatter={(date) => new Date(date).toLocaleDateString()}
-              formatter={(value: number | null, name: string) => {
-                if (value === null) return ['N/A', name];
+              formatter={(value: number | null | undefined, name: string) => {
+                if (value === null || value === undefined) return ['N/A', name];
                 return [value.toFixed(2), name];
               }}
               contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #374151', borderRadius: '0.5rem' }}

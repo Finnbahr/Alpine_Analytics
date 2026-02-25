@@ -69,7 +69,8 @@ export default function CourseTraitsChart({ data, trait }: Props) {
             label={{ value: 'Avg Z-Score', angle: -90, position: 'insideLeft', style: { fill: '#9ca3af' } }}
           />
           <Tooltip
-            formatter={(value: number, name: string) => {
+            formatter={(value: number | undefined, name: string) => {
+              if (!value) return ['N/A', name];
               if (name === 'avg_z_score') return [value.toFixed(2), 'Avg Z-Score'];
               return [value, name];
             }}
