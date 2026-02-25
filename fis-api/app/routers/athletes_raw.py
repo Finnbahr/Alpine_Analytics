@@ -56,7 +56,7 @@ def list_athletes(
             COUNT(*) as starts,
             COUNT(CASE WHEN rank = '1' THEN 1 END) as wins,
             COUNT(CASE WHEN rank ~ '^[0-9]+$' AND rank::int <= 3 THEN 1 END) as podiums,
-            ROUND(AVG(fis_points)::numeric, 2) as avg_fis_points
+            ROUND(AVG(NULLIF(fis_points, '')::numeric), 2) as avg_fis_points
         FROM raw.fis_results
         WHERE fis_code IS NOT NULL AND name IS NOT NULL
     """
@@ -121,7 +121,7 @@ def get_athlete(fis_code: str = Path(..., description="FIS athlete code")):
             COUNT(*) as starts,
             COUNT(CASE WHEN rank = '1' THEN 1 END) as wins,
             COUNT(CASE WHEN rank ~ '^[0-9]+$' AND rank::int <= 3 THEN 1 END) as podiums,
-            ROUND(AVG(fis_points)::numeric, 2) as avg_fis_points
+            ROUND(AVG(NULLIF(fis_points, '')::numeric)::numeric, 2) as avg_fis_points
         FROM raw.fis_results
         WHERE fis_code = %(fis_code)s
         GROUP BY fis_code, name, country
@@ -165,8 +165,8 @@ def get_athlete_races(
         WITH race_stats AS (
             SELECT
                 race_id,
-                AVG(fis_points) as mean_points,
-                STDDEV(fis_points) as std_points
+                AVG(NULLIF(fis_points, '')::numeric) as mean_points,
+                STDDEV(NULLIF(fis_points, '')::numeric) as std_points
             FROM raw.fis_results
             WHERE fis_points IS NOT NULL
             GROUP BY race_id
@@ -245,8 +245,8 @@ def get_athlete_momentum(
         WITH race_stats AS (
             SELECT
                 race_id,
-                AVG(fis_points) as mean_points,
-                STDDEV(fis_points) as std_points
+                AVG(NULLIF(fis_points, '')::numeric) as mean_points,
+                STDDEV(NULLIF(fis_points, '')::numeric) as std_points
             FROM raw.fis_results
             WHERE fis_points IS NOT NULL
             GROUP BY race_id
@@ -308,8 +308,8 @@ def get_athlete_courses(
         WITH race_stats AS (
             SELECT
                 race_id,
-                AVG(fis_points) as mean_points,
-                STDDEV(fis_points) as std_points
+                AVG(NULLIF(fis_points, '')::numeric) as mean_points,
+                STDDEV(NULLIF(fis_points, '')::numeric) as std_points
             FROM raw.fis_results
             WHERE fis_points IS NOT NULL
             GROUP BY race_id
@@ -388,8 +388,8 @@ def get_athlete_strokes_gained(
         WITH race_stats AS (
             SELECT
                 race_id,
-                AVG(fis_points) as mean_points,
-                STDDEV(fis_points) as std_points
+                AVG(NULLIF(fis_points, '')::numeric) as mean_points,
+                STDDEV(NULLIF(fis_points, '')::numeric) as std_points
             FROM raw.fis_results
             WHERE fis_points IS NOT NULL
             GROUP BY race_id
@@ -545,7 +545,7 @@ def get_athlete_regression(
             JOIN raw.race_details rd ON r.race_id = rd.race_id
             JOIN raw.courses c ON rd.course_id = c.course_id
             LEFT JOIN (
-                SELECT race_id, AVG(fis_points) as mean_points, STDDEV(fis_points) as std_points
+                SELECT race_id, AVG(NULLIF(fis_points, '')::numeric) as mean_points, STDDEV(NULLIF(fis_points, '')::numeric) as std_points
                 FROM raw.fis_results WHERE fis_points IS NOT NULL GROUP BY race_id
             ) rs ON r.race_id = rs.race_id
             WHERE r.fis_code = %(fis_code)s
@@ -649,7 +649,7 @@ def get_athlete_course_traits(
             JOIN raw.race_details rd ON r.race_id = rd.race_id
             JOIN raw.courses c ON rd.course_id = c.course_id
             LEFT JOIN (
-                SELECT race_id, AVG(fis_points) as mean_points, STDDEV(fis_points) as std_points
+                SELECT race_id, AVG(NULLIF(fis_points, '')::numeric) as mean_points, STDDEV(NULLIF(fis_points, '')::numeric) as std_points
                 FROM raw.fis_results WHERE fis_points IS NOT NULL GROUP BY race_id
             ) rs ON r.race_id = rs.race_id
             WHERE r.fis_code = %(fis_code)s
