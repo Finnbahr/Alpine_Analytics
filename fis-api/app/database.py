@@ -1,18 +1,39 @@
 """
-Database connection using the existing database package.
+Database connection utilities.
 """
 
-import sys
-import os
 import logging
+import psycopg2
 from typing import Dict, List, Optional
 from psycopg2.extras import RealDictCursor
+from contextlib import contextmanager
 
-# Add parent directory to path to import existing database module
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-from database import get_connection
+from app.config import settings
 
 logger = logging.getLogger(__name__)
+
+
+@contextmanager
+def get_connection():
+    """
+    Get database connection as context manager.
+
+    Yields:
+        psycopg2 connection
+    """
+    conn = None
+    try:
+        conn = psycopg2.connect(
+            host=settings.DB_HOST,
+            port=settings.DB_PORT,
+            user=settings.DB_USER,
+            password=settings.DB_PASSWORD,
+            database=settings.DB_NAME
+        )
+        yield conn
+    finally:
+        if conn:
+            conn.close()
 
 
 def test_connection() -> bool:
@@ -23,7 +44,7 @@ def test_connection() -> bool:
         bool: True if connection successful, False otherwise
     """
     try:
-        with get_connection('raw') as conn:
+        with get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT 1")
             cursor.fetchone()
@@ -47,7 +68,7 @@ def execute_query(query: str, params: dict = None) -> List[Dict]:
         list: List of dictionaries with query results
     """
     try:
-        with get_connection('raw') as conn:
+        with get_connection() as conn:
             cursor = conn.cursor(cursor_factory=RealDictCursor)
             cursor.execute(query, params)
             results = cursor.fetchall()
@@ -71,7 +92,7 @@ def execute_query_single(query: str, params: dict = None) -> Optional[Dict]:
         dict or None: Single result dictionary or None if no results
     """
     try:
-        with get_connection('raw') as conn:
+        with get_connection() as conn:
             cursor = conn.cursor(cursor_factory=RealDictCursor)
             cursor.execute(query, params)
             result = cursor.fetchone()
