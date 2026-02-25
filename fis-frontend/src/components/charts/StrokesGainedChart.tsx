@@ -53,9 +53,9 @@ export default function StrokesGainedChart({ strokesGainedData, bibData }: Props
             <YAxis stroke="#9ca3af" />
             <Tooltip
               labelFormatter={(date) => new Date(date).toLocaleDateString()}
-              formatter={(value: number | null | undefined, name: string) => {
-                if (value === null || value === undefined) return ['N/A', name];
-                return [value.toFixed(2), name];
+              formatter={(value: any, name: string | undefined) => {
+                if (value === null || value === undefined || typeof value !== 'number') return ['N/A', name || 'Value'];
+                return [value.toFixed(2), name || 'Value'];
               }}
               contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #374151', borderRadius: '0.5rem' }}
               labelStyle={{ color: '#f3f4f6' }}

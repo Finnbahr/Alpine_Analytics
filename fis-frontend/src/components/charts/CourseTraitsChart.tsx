@@ -69,10 +69,10 @@ export default function CourseTraitsChart({ data, trait }: Props) {
             label={{ value: 'Avg Z-Score', angle: -90, position: 'insideLeft', style: { fill: '#9ca3af' } }}
           />
           <Tooltip
-            formatter={(value: number | undefined, name: string) => {
-              if (!value) return ['N/A', name];
+            formatter={(value: number | undefined, name: string | undefined) => {
+              if (!value) return ['N/A', name || 'Value'];
               if (name === 'avg_z_score') return [value.toFixed(2), 'Avg Z-Score'];
-              return [value, name];
+              return [value, name || 'Value'];
             }}
             labelFormatter={(quintile) => {
               const item = chartData.find(d => d.quintile === quintile);

@@ -64,7 +64,7 @@ export default function RegressionChart({ data, discipline }: Props) {
             tick={{ fontSize: 12 }}
           />
           <Tooltip
-            formatter={(value: number | undefined, _name: string, props: any) => {
+            formatter={(value: number | undefined, _name: string | undefined, props: any) => {
               if (!value) return ['N/A', 'Coefficient'];
               const r2 = props.payload.r_squared;
               return [
