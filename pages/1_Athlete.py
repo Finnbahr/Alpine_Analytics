@@ -175,6 +175,20 @@ def load_top_performances(name: str) -> pd.DataFrame:
 
 
 @st.cache_data(ttl=604800)
+def load_consistency_stats(name: str) -> pd.DataFrame:
+    try:
+        return query("""
+            SELECT discipline, dnf_rate, max_dnf_streak,
+                   bounce_back_z_score, re_dnf_rate
+            FROM athlete_aggregate.performance_consistency_career
+            WHERE name = :name
+            ORDER BY discipline
+        """, {"name": name})
+    except Exception:
+        return pd.DataFrame()
+
+
+@st.cache_data(ttl=604800)
 def load_location_stats(name: str) -> pd.DataFrame:
     """Aggregate performance per venue — used for the Best Hills table."""
     try:
@@ -311,17 +325,18 @@ else:
 st.sidebar.markdown("---")
 
 with st.spinner(f"Loading {selected}..."):
-    df_streak = load_hot_streak(selected)
-    df_career = load_career_stats(selected)
-    df_yearly = load_yearly_stats(selected)
-    df_tier   = load_performance_tier(selected)
-    df_traits = load_course_traits(selected)
-    df_sg     = load_strokes_gained(selected)
-    df_field  = load_race_field_stats(selected)
-    df_bib    = load_bib_relative_stats(selected)
-    df_locs   = load_location_stats(selected)
-    fis_code  = load_fis_code(selected)
-    df_top    = load_top_performances(selected)
+    df_streak       = load_hot_streak(selected)
+    df_career       = load_career_stats(selected)
+    df_yearly       = load_yearly_stats(selected)
+    df_tier         = load_performance_tier(selected)
+    df_traits       = load_course_traits(selected)
+    df_sg           = load_strokes_gained(selected)
+    df_field        = load_race_field_stats(selected)
+    df_bib          = load_bib_relative_stats(selected)
+    df_locs         = load_location_stats(selected)
+    fis_code        = load_fis_code(selected)
+    df_top          = load_top_performances(selected)
+    df_consistency  = load_consistency_stats(selected)
 
 if df_streak.empty:
     st.warning("No data found for this athlete.")
@@ -345,16 +360,17 @@ SECTIONS = [
 section = st.sidebar.radio("Navigate", SECTIONS, label_visibility="collapsed")
 
 # Apply discipline filter
-streak_f = df_streak[df_streak["discipline"].isin(selected_disc)]
-career_f  = df_career[df_career["discipline"].isin(selected_disc)]
-yearly_f  = df_yearly[df_yearly["discipline"].isin(selected_disc)]
-tier_f    = df_tier[df_tier["discipline"].isin(selected_disc)]
-traits_f  = df_traits[df_traits["discipline"].isin(selected_disc)]
-sg_f      = df_sg[df_sg["discipline"].isin(selected_disc)]
-field_f   = df_field[df_field["discipline"].isin(selected_disc)] if not df_field.empty else df_field
-bib_f     = df_bib[df_bib["discipline"].isin(selected_disc)] if not df_bib.empty else df_bib
-locs_f    = df_locs[df_locs["discipline"].isin(selected_disc)] if not df_locs.empty else df_locs
-top_f     = df_top[df_top["discipline"].isin(selected_disc)] if not df_top.empty else df_top
+streak_f       = df_streak[df_streak["discipline"].isin(selected_disc)]
+career_f       = df_career[df_career["discipline"].isin(selected_disc)]
+yearly_f       = df_yearly[df_yearly["discipline"].isin(selected_disc)]
+tier_f         = df_tier[df_tier["discipline"].isin(selected_disc)]
+traits_f       = df_traits[df_traits["discipline"].isin(selected_disc)]
+sg_f           = df_sg[df_sg["discipline"].isin(selected_disc)]
+field_f        = df_field[df_field["discipline"].isin(selected_disc)] if not df_field.empty else df_field
+bib_f          = df_bib[df_bib["discipline"].isin(selected_disc)] if not df_bib.empty else df_bib
+locs_f         = df_locs[df_locs["discipline"].isin(selected_disc)] if not df_locs.empty else df_locs
+top_f          = df_top[df_top["discipline"].isin(selected_disc)] if not df_top.empty else df_top
+consistency_f  = df_consistency[df_consistency["discipline"].isin(selected_disc)] if not df_consistency.empty else df_consistency
 
 # ---------------------------------------------------------------------------
 # Page header — name + FIS code
@@ -799,6 +815,44 @@ elif section == "Consistency & Bounce Back":
                         st.caption(f"n = {row['Bad Races Sampled']} bad races")
         else:
             st.info("Not enough race data to compute bounce back rates.")
+
+        st.markdown("---")
+        st.subheader("After a DNF or DSQ")
+        st.caption(
+            "When an athlete doesn't finish a race, two questions matter: "
+            "do they tend to DNF again next time out, and how do they actually perform "
+            "when they do come back and finish? "
+            "Re-DNF Rate is the fraction of races immediately following a DNF/DSQ "
+            "where the athlete DNF'd or DSQ'd again. "
+            "Bounce-Back Z is their average Z-Score in the race after a DNF/DSQ — "
+            "above 0 means they come back performing above the field average."
+        )
+        if not consistency_f.empty:
+            dnf_cols = st.columns(min(len(consistency_f), 5))
+            for col, (_, row) in zip(dnf_cols, consistency_f.iterrows()):
+                with col:
+                    with st.container(border=True):
+                        st.markdown(f"**{row['discipline']}**")
+                        re_dnf = row.get("re_dnf_rate")
+                        bb_z   = row.get("bounce_back_z_score")
+                        if pd.notna(re_dnf):
+                            st.metric(
+                                "Re-DNF Rate",
+                                f"{re_dnf:.0%}",
+                                help="% of races right after a DNF/DSQ where they DNF'd/DSQ'd again",
+                            )
+                        else:
+                            st.metric("Re-DNF Rate", "—")
+                        if pd.notna(bb_z):
+                            st.metric(
+                                "Bounce-Back Z",
+                                f"{bb_z:+.3f}",
+                                help="Avg Z-Score in the race after a DNF/DSQ. Above 0 = came back above field average.",
+                            )
+                        else:
+                            st.metric("Bounce-Back Z", "—")
+        else:
+            st.info("No DNF data available for selected disciplines.")
 
         st.markdown("---")
         st.subheader("Recent Race Z-Scores")
