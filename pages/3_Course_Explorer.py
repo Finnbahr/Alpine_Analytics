@@ -1258,7 +1258,7 @@ elif page == "Course Similarity":
                     sim_table.columns = [
                         "Location", "Homologation", "Similarity Score",
                         "Avg Win Time (min)", "Avg Gates", "Start Alt (m)",
-                        "Avg Vert (m)", "DNF %", "Avg Field FIS", "Country",
+                        "Avg Vert (m)", "DNF %", "Country",
                     ]
                     st.dataframe(sim_table, use_container_width=True, hide_index=True)
             else:
