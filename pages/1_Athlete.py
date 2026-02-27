@@ -17,6 +17,51 @@ from database import query
 # Helpers
 # ---------------------------------------------------------------------------
 
+def combine_race_types(df: pd.DataFrame, group_cols: list) -> pd.DataFrame:
+    """
+    After filtering by selected race_types, collapse multiple race_type rows
+    back to one row per group_cols entry using weighted averages (weighted by
+    race_count / races). Counts are summed; min_ columns take min; max_ take max;
+    all other numeric columns get a weighted average.
+    """
+    if df.empty or "race_type" not in df.columns:
+        return df.drop(columns=["race_type"], errors="ignore")
+
+    wt_col = next((c for c in ("race_count", "races") if c in df.columns), None)
+
+    def agg_group(g):
+        w = g[wt_col].fillna(1) if wt_col else pd.Series([1.0] * len(g), index=g.index)
+        if w.sum() == 0:
+            w = pd.Series([1.0] * len(g), index=g.index)
+        result = {}
+        for col in g.columns:
+            if col in group_cols or col in ("race_type", "last_updated", "fis_code", "name"):
+                continue
+            elif col in ("race_count", "dnf_count", "races"):
+                result[col] = int(g[col].sum())
+            elif col.startswith("min_"):
+                result[col] = g[col].min()
+            elif col.startswith("max_"):
+                result[col] = g[col].max()
+            elif pd.api.types.is_numeric_dtype(g[col]):
+                vals = g[col].dropna()
+                if len(vals) == 0:
+                    result[col] = None
+                else:
+                    w_sub = w.loc[vals.index]
+                    result[col] = float(np.average(vals, weights=w_sub)) if w_sub.sum() > 0 else float(vals.mean())
+            else:
+                result[col] = g[col].iloc[0]
+        return pd.Series(result)
+
+    agg = df.groupby(group_cols, group_keys=True).apply(agg_group).reset_index()
+    id_cols = [c for c in ("fis_code", "name") if c in df.columns]
+    if id_cols:
+        id_data = df.groupby(group_cols)[id_cols].first().reset_index()
+        agg = agg.merge(id_data, on=group_cols, how="left")
+    return agg
+
+
 def smart_sort_key(val):
     """Sort trait bin labels: numeric ranges by first number, else alphabetically."""
     import re
@@ -104,19 +149,19 @@ def load_hot_streak(name: str) -> pd.DataFrame:
 @st.cache_data(ttl=604800)
 def load_career_stats(name: str) -> pd.DataFrame:
     return query("""
-        SELECT discipline, race_count,
+        SELECT discipline, race_type, race_count,
                mean_fis_points, min_fis_points,
                mean_rank, dnf_rate, mean_race_z_score
         FROM athlete_aggregate.basic_athlete_info_career
         WHERE name = :name
-        ORDER BY race_count DESC
+        ORDER BY discipline, race_count DESC
     """, {"name": name})
 
 
 @st.cache_data(ttl=604800)
 def load_yearly_stats(name: str) -> pd.DataFrame:
     df = query("""
-        SELECT race_year, discipline, race_count,
+        SELECT race_year, discipline, race_type, race_count,
                mean_fis_points, mean_rank, mean_race_z_score
         FROM athlete_aggregate.basic_athlete_info_yearly
         WHERE name = :name
@@ -139,7 +184,7 @@ def load_performance_tier(name: str) -> pd.DataFrame:
 @st.cache_data(ttl=604800)
 def load_course_traits(name: str) -> pd.DataFrame:
     return query("""
-        SELECT discipline, trait, trait_bin,
+        SELECT discipline, race_type, trait, trait_bin,
                avg_performance_delta, avg_z_score, race_count
         FROM athlete_aggregate.course_traits
         WHERE name = :name
@@ -185,7 +230,7 @@ def load_top_performances(name: str) -> pd.DataFrame:
 def load_consistency_stats(name: str) -> pd.DataFrame:
     try:
         return query("""
-            SELECT discipline, dnf_rate, max_dnf_streak,
+            SELECT discipline, race_type, races, dnf_rate, max_dnf_streak,
                    bounce_back_z_score, re_dnf_rate, cv_fis
             FROM athlete_aggregate.performance_consistency_career
             WHERE name = :name
@@ -199,10 +244,11 @@ def load_consistency_stats(name: str) -> pd.DataFrame:
 def load_consistency_yearly(name: str) -> pd.DataFrame:
     try:
         return query("""
-            SELECT discipline, season, n_races, std_race_z_score, cv_fis
+            SELECT discipline, race_type, year AS season, races AS n_races,
+                   std_race_z_score, cv_fis
             FROM athlete_aggregate.performance_consistency_yearly
             WHERE name = :name
-            ORDER BY discipline, season
+            ORDER BY discipline, year
         """, {"name": name})
     except Exception:
         return pd.DataFrame()
@@ -391,18 +437,35 @@ SECTIONS = [
 section = st.sidebar.radio("Navigate", SECTIONS, label_visibility="collapsed")
 
 # Apply discipline + competition level filters
-streak_f       = df_streak[df_streak["discipline"].isin(selected_disc) & df_streak["race_type"].isin(selected_race_types)]
-career_f       = df_career[df_career["discipline"].isin(selected_disc)]
-yearly_f       = df_yearly[df_yearly["discipline"].isin(selected_disc)]
-tier_f         = df_tier[df_tier["discipline"].isin(selected_disc)]
-traits_f       = df_traits[df_traits["discipline"].isin(selected_disc)]
-sg_f           = df_sg[df_sg["discipline"].isin(selected_disc) & df_sg["race_type"].isin(selected_race_types)] if not df_sg.empty else df_sg
-field_f        = df_field[df_field["race_id"].isin(streak_f["race_id"])] if not df_field.empty else df_field
-bib_f          = df_bib[df_bib["discipline"].isin(selected_disc)] if not df_bib.empty else df_bib
-locs_f         = df_locs[df_locs["discipline"].isin(selected_disc)] if not df_locs.empty else df_locs
-top_f          = df_top[df_top["discipline"].isin(selected_disc) & df_top["race_type"].isin(selected_race_types)] if not df_top.empty else df_top
-consistency_f  = df_consistency[df_consistency["discipline"].isin(selected_disc)] if not df_consistency.empty else df_consistency
-cons_yearly_f  = df_cons_yearly[df_cons_yearly["discipline"].isin(selected_disc)] if not df_cons_yearly.empty else df_cons_yearly
+streak_f  = df_streak[df_streak["discipline"].isin(selected_disc) & df_streak["race_type"].isin(selected_race_types)]
+sg_f      = df_sg[df_sg["discipline"].isin(selected_disc) & df_sg["race_type"].isin(selected_race_types)] if not df_sg.empty else df_sg
+top_f     = df_top[df_top["discipline"].isin(selected_disc) & df_top["race_type"].isin(selected_race_types)] if not df_top.empty else df_top
+field_f   = df_field[df_field["race_id"].isin(streak_f["race_id"])] if not df_field.empty else df_field
+tier_f    = df_tier[df_tier["discipline"].isin(selected_disc)]
+bib_f     = df_bib[df_bib["discipline"].isin(selected_disc)] if not df_bib.empty else df_bib
+locs_f    = df_locs[df_locs["discipline"].isin(selected_disc)] if not df_locs.empty else df_locs
+
+# Pre-aggregated tables: filter by race_type then combine (weighted avg) per discipline
+career_f = combine_race_types(
+    df_career[df_career["discipline"].isin(selected_disc) & df_career["race_type"].isin(selected_race_types)],
+    ["discipline"]
+)
+yearly_f = combine_race_types(
+    df_yearly[df_yearly["discipline"].isin(selected_disc) & df_yearly["race_type"].isin(selected_race_types)],
+    ["race_year", "discipline"]
+)
+traits_f = combine_race_types(
+    df_traits[df_traits["discipline"].isin(selected_disc) & df_traits["race_type"].isin(selected_race_types)],
+    ["discipline", "trait", "trait_bin"]
+)
+consistency_f = combine_race_types(
+    df_consistency[df_consistency["discipline"].isin(selected_disc) & df_consistency["race_type"].isin(selected_race_types)],
+    ["discipline"]
+)
+cons_yearly_f = combine_race_types(
+    df_cons_yearly[df_cons_yearly["discipline"].isin(selected_disc) & df_cons_yearly["race_type"].isin(selected_race_types)],
+    ["discipline", "season"]
+)
 
 # ---------------------------------------------------------------------------
 # Page header — name + FIS code
