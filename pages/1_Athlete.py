@@ -88,13 +88,16 @@ def load_fis_code(name: str) -> str | None:
 @st.cache_data(ttl=604800)
 def load_hot_streak(name: str) -> pd.DataFrame:
     df = query("""
-        SELECT race_id, date, discipline, fis_points, rank,
-               race_z_score, momentum_z, momentum_fis, rolling_race_z
-        FROM athlete_aggregate.hot_streak
-        WHERE name = :name
-        ORDER BY date
+        SELECT hs.race_id, hs.date, hs.discipline, hs.fis_points, hs.rank,
+               hs.race_z_score, hs.momentum_z, hs.momentum_fis, hs.rolling_race_z,
+               rd.race_type
+        FROM athlete_aggregate.hot_streak hs
+        JOIN raw.race_details rd ON rd.race_id = hs.race_id
+        WHERE hs.name = :name
+        ORDER BY hs.date
     """, {"name": name})
     df["date"] = pd.to_datetime(df["date"])
+    df["race_type"] = df["race_type"].fillna("Unknown")
     return df
 
 
@@ -147,13 +150,15 @@ def load_course_traits(name: str) -> pd.DataFrame:
 @st.cache_data(ttl=604800)
 def load_strokes_gained(name: str) -> pd.DataFrame:
     df = query("""
-        SELECT race_id, date, discipline, location, fis_points,
-               points_gained, race_z_score
-        FROM race_aggregate.strokes_gained
-        WHERE name = :name
-        ORDER BY date DESC
+        SELECT sg.race_id, sg.date, sg.discipline, sg.location, sg.fis_points,
+               sg.points_gained, sg.race_z_score, rd.race_type
+        FROM race_aggregate.strokes_gained sg
+        JOIN raw.race_details rd ON rd.race_id = sg.race_id
+        WHERE sg.name = :name
+        ORDER BY sg.date DESC
     """, {"name": name})
     df["date"] = pd.to_datetime(df["date"])
+    df["race_type"] = df["race_type"].fillna("Unknown")
     return df
 
 
@@ -161,14 +166,16 @@ def load_strokes_gained(name: str) -> pd.DataFrame:
 def load_top_performances(name: str) -> pd.DataFrame:
     try:
         df = query("""
-            SELECT date, discipline, location, fis_points,
-                   points_gained, race_z_score
-            FROM race_aggregate.strokes_gained
-            WHERE name = :name AND fis_points IS NOT NULL
-            ORDER BY fis_points ASC
+            SELECT sg.date, sg.discipline, sg.location, sg.fis_points,
+                   sg.points_gained, sg.race_z_score, rd.race_type
+            FROM race_aggregate.strokes_gained sg
+            JOIN raw.race_details rd ON rd.race_id = sg.race_id
+            WHERE sg.name = :name AND sg.fis_points IS NOT NULL
+            ORDER BY sg.fis_points ASC
             LIMIT 20
         """, {"name": name})
         df["date"] = pd.to_datetime(df["date"])
+        df["race_type"] = df["race_type"].fillna("Unknown")
         return df
     except Exception:
         return pd.DataFrame()
@@ -359,6 +366,16 @@ if df_streak.empty:
 disciplines = sorted(df_streak["discipline"].dropna().unique().tolist())
 selected_disc = st.sidebar.multiselect("Disciplines", disciplines, default=disciplines)
 
+race_types_all = sorted(df_streak["race_type"].dropna().unique().tolist())
+selected_race_types = st.sidebar.multiselect(
+    "Competition Level",
+    race_types_all,
+    default=race_types_all,
+    help="Filter to specific competition levels (World Cup, Europa Cup, Nor-Am, FIS, etc.)",
+)
+if not selected_race_types:
+    selected_race_types = race_types_all
+
 st.sidebar.markdown("---")
 
 SECTIONS = [
@@ -373,17 +390,17 @@ SECTIONS = [
 ]
 section = st.sidebar.radio("Navigate", SECTIONS, label_visibility="collapsed")
 
-# Apply discipline filter
-streak_f       = df_streak[df_streak["discipline"].isin(selected_disc)]
+# Apply discipline + competition level filters
+streak_f       = df_streak[df_streak["discipline"].isin(selected_disc) & df_streak["race_type"].isin(selected_race_types)]
 career_f       = df_career[df_career["discipline"].isin(selected_disc)]
 yearly_f       = df_yearly[df_yearly["discipline"].isin(selected_disc)]
 tier_f         = df_tier[df_tier["discipline"].isin(selected_disc)]
 traits_f       = df_traits[df_traits["discipline"].isin(selected_disc)]
-sg_f           = df_sg[df_sg["discipline"].isin(selected_disc)]
-field_f        = df_field[df_field["discipline"].isin(selected_disc)] if not df_field.empty else df_field
+sg_f           = df_sg[df_sg["discipline"].isin(selected_disc) & df_sg["race_type"].isin(selected_race_types)] if not df_sg.empty else df_sg
+field_f        = df_field[df_field["race_id"].isin(streak_f["race_id"])] if not df_field.empty else df_field
 bib_f          = df_bib[df_bib["discipline"].isin(selected_disc)] if not df_bib.empty else df_bib
 locs_f         = df_locs[df_locs["discipline"].isin(selected_disc)] if not df_locs.empty else df_locs
-top_f          = df_top[df_top["discipline"].isin(selected_disc)] if not df_top.empty else df_top
+top_f          = df_top[df_top["discipline"].isin(selected_disc) & df_top["race_type"].isin(selected_race_types)] if not df_top.empty else df_top
 consistency_f  = df_consistency[df_consistency["discipline"].isin(selected_disc)] if not df_consistency.empty else df_consistency
 cons_yearly_f  = df_cons_yearly[df_cons_yearly["discipline"].isin(selected_disc)] if not df_cons_yearly.empty else df_cons_yearly
 
@@ -395,6 +412,9 @@ h1, h2 = st.columns([5, 1])
 h1.title(selected)
 if fis_code:
     h2.metric("FIS Code", fis_code)
+
+if len(selected_race_types) < len(race_types_all):
+    st.info(f"Filtered to: {', '.join(sorted(selected_race_types))}")
 
 st.markdown("---")
 
