@@ -391,10 +391,12 @@ if section == "Overview":
 
     st.subheader("Career Summary")
     st.caption(
-        "Career totals and averages per discipline. "
-        "Best FIS is the athlete's lowest (best) ever FIS points score in that discipline. "
-        "Avg Z-Score shows how consistently they beat the field — positive = outperforming on average. "
-        "DNF % is the share of races that ended as a did-not-finish."
+        "Top-line career numbers by discipline. "
+        "Best FIS is the single lowest (best) FIS points result ever posted — the career ceiling. "
+        "Avg FIS is the mean across all finishes, which reflects typical output rather than peak. "
+        "Avg Z-Score is the most important number here: above 0 means the athlete beats the field "
+        "more often than not across their entire career. Below 0 means they are consistently below "
+        "the field average. DNF % counts races where the athlete did not reach the finish line."
     )
 
     if not career_f.empty:
@@ -482,9 +484,12 @@ elif section == "Year-by-Year":
 
     st.subheader("Year-by-Year Breakdown")
     st.caption(
-        "Season-level averages per discipline. "
-        "Use this to spot multi-year improvement or decline. "
-        "Avg Z-Score above 0 means the athlete beat the field more often than not that season."
+        "Season-level averages per discipline, covering every start in each calendar year. "
+        "Avg Z-Score is the primary indicator: a season above 0 means the athlete beat the field "
+        "more often than not that year. A trend of rising Z-Scores across multiple seasons signals "
+        "genuine long-term development. A declining FIS average paired with an improving Z-Score "
+        "often indicates an athlete moving into stronger, more competitive fields — a sign of progress, "
+        "not decline. Watch both together to distinguish real improvement from schedule changes."
     )
 
     if not yearly_f.empty:
@@ -528,13 +533,16 @@ elif section == "Course Traits":
 
     st.subheader("Course Trait Impact")
     st.caption(
-        "Two views of how course characteristics affect this athlete. "
-        "The summary chart (top) ranks traits by how much impact they have — "
-        "a longer bar means that characteristic has a bigger swing in this athlete's performance. "
-        "Color shows direction: blue = performs better when the trait is higher, "
-        "orange = performs better when lower, gray = no clear impact. "
-        "The detail charts below show the full breakdown per trait, "
-        "with bins ordered from lowest (left) to highest (right)."
+        "How course physical characteristics systematically affect this athlete's performance. "
+        "Courses are grouped into five bins (quintiles) for each trait — lowest to highest. "
+        "The summary bar chart ranks traits by total impact: a longer bar means that "
+        "characteristic produces the biggest swing in this athlete's Z-Score from one extreme "
+        "to the other. Blue = performs better as that trait increases (e.g., better on higher "
+        "gate-count courses). Orange = performs better when the trait is lower. "
+        "Gray = no consistent directional effect. "
+        "The detail charts below break down each trait bin by bin. A large positive bar in "
+        "a specific bin means this athlete consistently outperforms their own career average "
+        "on courses in that range — a genuine structural strength, not a random result."
     )
 
     if not traits_f.empty:
@@ -648,10 +656,14 @@ elif section == "Hot Streak":
 
     st.subheader("Hot Streak — Momentum")
     st.caption(
-        "Tracks whether the athlete is on a hot or cold streak based on recent Z-Scores. "
-        "The bold line is a 3-race rolling average (smoothed) — faint background shows the raw signal. "
-        "Rising line = improving form. Falling line = cooling off. "
-        "Positive = beating the field recently; negative = falling below field average."
+        "Current form, independent of career averages. The bold line is a smoothed rolling average "
+        "of recent Z-Scores — it filters out single-race noise to show the underlying trend. "
+        "The faint line behind it is the raw, unsmoothed signal. "
+        "A line rising above zero means the athlete is currently in a run of above-average results. "
+        "A line falling toward or below zero means form is cooling, regardless of what their "
+        "FIS points or career Z-Score say. This is the most relevant indicator of near-term performance. "
+        "An athlete with a career Z of +0.2 but sharply rising momentum is often more dangerous "
+        "heading into the next race than one with a higher average whose momentum is declining."
     )
 
     if not streak_f.empty:
@@ -719,10 +731,16 @@ elif section == "Consistency & Bounce Back":
     if not streak_f.empty:
         st.subheader("Race-to-Race Consistency")
         st.caption(
-            "The violin plot shows the distribution of Z-Scores across all races. "
-            "A narrow, tall violin centered above 0 = highly consistent and above-average athlete. "
-            "The box inside shows the median and middle 50% of results. "
-            "Individual dots are single races."
+            "Distribution of Z-Scores across every race in the selected disciplines. "
+            "The shape of the violin reveals the athlete's reliability profile. "
+            "Narrow and tall, centered above 0: highly consistent, above-average performer — "
+            "rarely dominant but rarely far off either. "
+            "Wide and spread out: high-variance athlete who can dominate one race and fall well "
+            "below average in the next. "
+            "The horizontal box marks the middle 50% of results; the line inside is the median. "
+            "Individual dots are single races — outlier dots far from the body reveal the ceiling "
+            "and floor of this athlete's range. A consistently positive median with a narrow spread "
+            "is the profile of a reliable, field-beating competitor."
         )
         fig = px.violin(
             streak_f.dropna(subset=["race_z_score"]),
