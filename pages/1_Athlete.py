@@ -103,7 +103,7 @@ def load_athlete_by_fis_id(fis_id: str) -> str | None:
     try:
         df = query("""
             SELECT DISTINCT name
-            FROM athletes
+            FROM athlete_aggregate.hot_streak
             WHERE CAST(fis_code AS TEXT) = :fis_id
             LIMIT 1
         """, {"fis_id": fis_id.strip()})
@@ -119,7 +119,7 @@ def load_fis_code(name: str) -> str | None:
     try:
         df = query("""
             SELECT DISTINCT fis_code
-            FROM athletes
+            FROM athlete_aggregate.hot_streak
             WHERE name = :name
             LIMIT 1
         """, {"name": name})
@@ -249,6 +249,20 @@ def load_consistency_yearly(name: str) -> pd.DataFrame:
             FROM athlete_aggregate.performance_consistency_yearly
             WHERE name = :name
             ORDER BY discipline, year
+        """, {"name": name})
+    except Exception:
+        return pd.DataFrame()
+
+
+@st.cache_data(ttl=604800)
+def load_weather_performance(name: str) -> pd.DataFrame:
+    try:
+        return query("""
+            SELECT discipline, race_type, condition, condition_bin,
+                   avg_z_score, race_count
+            FROM athlete_aggregate.weather_performance
+            WHERE name = :name
+            ORDER BY discipline, condition, condition_bin
         """, {"name": name})
     except Exception:
         return pd.DataFrame()
@@ -402,6 +416,7 @@ with st.spinner(f"Loading {selected}..."):
     df_yearly       = load_yearly_stats(selected)
     df_tier         = load_performance_tier(selected)
     df_traits       = load_course_traits(selected)
+    df_weather      = load_weather_performance(selected)
     df_sg           = load_strokes_gained(selected)
     df_field        = load_race_field_stats(selected)
     df_bib          = load_bib_relative_stats(selected)
@@ -434,6 +449,7 @@ SECTIONS = [
     "Overview",
     "Year-by-Year",
     "Course Traits",
+    "Weather Conditions",
     "Hot Streak",
     "Consistency & Bounce Back",
     "Strokes Gained",
@@ -466,6 +482,10 @@ yearly_f = combine_race_types(
 traits_f = combine_race_types(
     df_traits[df_traits["discipline"].isin(selected_disc) & df_traits["race_type"].isin(selected_race_types)],
     ["discipline", "trait", "trait_bin"]
+)
+weather_f = combine_race_types(
+    df_weather[df_weather["discipline"].isin(selected_disc) & df_weather["race_type"].isin(selected_race_types)] if not df_weather.empty else df_weather,
+    ["discipline", "condition", "condition_bin"]
 )
 consistency_f = combine_race_types(
     df_consistency[df_consistency["discipline"].isin(selected_disc) & df_consistency["race_type"].isin(selected_race_types)],
@@ -754,6 +774,87 @@ elif section == "Course Traits":
                 st.plotly_chart(fig, use_container_width=True)
     else:
         st.info("No course trait data available for selected disciplines.")
+
+
+# ===========================================================================
+# Weather Conditions
+# ===========================================================================
+elif section == "Weather Conditions":
+
+    st.subheader("Performance by Weather Condition")
+    st.caption(
+        "How weather on race day correlates with this athlete's Z-Score relative to the field. "
+        "Races are grouped into three buckets for each weather variable: temperature, cloud cover, "
+        "and precipitation. A positive bar means the athlete outperforms the field on average in "
+        "those conditions; a negative bar means they tend to underperform. "
+        "Only races with available weather data are included. "
+        "Buckets with fewer than 3 races should be interpreted cautiously."
+    )
+
+    # Ordered bin labels for consistent left-to-right display
+    BIN_ORDER = {
+        "temperature":   ["Cold (<-5°C)", "Cool (-5–2°C)", "Warm (>2°C)"],
+        "cloud_cover":   ["Clear (<30%)", "Partly Cloudy (30–70%)", "Overcast (>70%)"],
+        "precipitation": ["Dry (<0.5mm)", "Light (0.5–5mm)", "Heavy (>5mm)"],
+    }
+    CONDITION_LABELS = {
+        "temperature":   "Temperature",
+        "cloud_cover":   "Cloud Cover",
+        "precipitation": "Precipitation",
+    }
+
+    if not weather_f.empty:
+        for disc in sorted(weather_f["discipline"].unique()):
+            disc_data = weather_f[weather_f["discipline"] == disc]
+            if disc_data.empty:
+                continue
+
+            st.markdown(f"**{disc}**")
+
+            for condition in ["temperature", "cloud_cover", "precipitation"]:
+                c_data = disc_data[disc_data["condition"] == condition].copy()
+                if c_data.empty:
+                    continue
+
+                bin_order = BIN_ORDER.get(condition, sorted(c_data["condition_bin"].unique()))
+                c_data["_order"] = c_data["condition_bin"].apply(
+                    lambda b: bin_order.index(b) if b in bin_order else 99
+                )
+                c_data = c_data.sort_values("_order")
+
+                bar_colors = [
+                    "#1f77b4" if v >= 0 else "#d62728"
+                    for v in c_data["avg_z_score"]
+                ]
+                fig = go.Figure(go.Bar(
+                    x=c_data["condition_bin"].astype(str),
+                    y=c_data["avg_z_score"],
+                    marker_color=bar_colors,
+                    text=c_data["avg_z_score"].round(3),
+                    textposition="outside",
+                    customdata=c_data["race_count"].values,
+                    hovertemplate=(
+                        "Condition: %{x}<br>Avg Z: %{y:.3f}<br>Races: %{customdata}<extra></extra>"
+                    ),
+                ))
+                fig.add_hline(y=0, line_dash="dot", line_color="gray")
+                fig.update_layout(
+                    title=CONDITION_LABELS.get(condition, condition),
+                    height=220,
+                    margin=dict(t=35, b=10, l=20, r=10),
+                    yaxis_title="Avg Z-Score",
+                    xaxis=dict(
+                        categoryorder="array",
+                        categoryarray=bin_order,
+                        title="",
+                    ),
+                    showlegend=False,
+                )
+                st.plotly_chart(fig, use_container_width=True)
+
+            st.markdown("---")
+    else:
+        st.info("No weather performance data available for selected disciplines.")
 
 
 # ===========================================================================
