@@ -112,6 +112,23 @@ def load_race_raw_results(race_id: str) -> pd.DataFrame:
         return pd.DataFrame()
 
 
+@st.cache_data(ttl=604800)
+def load_race_weather(race_id: str) -> dict:
+    """Race-day weather from raw.race_weather for a specific race_id."""
+    try:
+        df = query("""
+            SELECT air_temp_c, cloud_cover, precip_24h_mm
+            FROM raw.race_weather
+            WHERE race_id = :race_id
+            LIMIT 1
+        """, {"race_id": race_id})
+        if not df.empty:
+            return df.iloc[0].to_dict()
+    except Exception:
+        pass
+    return {}
+
+
 
 # ---------------------------------------------------------------------------
 # Sidebar — filters + race selector
@@ -177,9 +194,10 @@ selected_race_id = int(selected_race["race_id"])
 # ---------------------------------------------------------------------------
 
 with st.spinner("Loading race results..."):
-    race_df   = load_race_results(selected_race_id)
-    race_info = load_race_info(selected_race_id)
-    raw_df    = load_race_raw_results(selected_race_id)
+    race_df      = load_race_results(selected_race_id)
+    race_info    = load_race_info(selected_race_id)
+    raw_df       = load_race_raw_results(selected_race_id)
+    race_weather = load_race_weather(selected_race_id)
 
 if race_df.empty:
     st.warning("No results found for this race.")
@@ -218,7 +236,8 @@ if race_info:
     has_two_runs = race_info.get("second_run_course_setter") or race_info.get("second_run_number_of_gates")
 
     with st.container(border=True):
-        info_cols = st.columns([2, 2, 1])
+        n_info_cols = 4 if race_weather else 3
+        info_cols = st.columns([2, 2, 1, 1] if race_weather else [2, 2, 1])
 
         # Run 1
         with info_cols[0]:
@@ -259,6 +278,20 @@ if race_info:
                 st.caption(f"Alt: {int(race_info['start_altitude'])} → {int(race_info['finish_altitude'])} m")
             if race_info.get("homologation_number"):
                 st.caption(f"Homol: {race_info['homologation_number']}")
+
+        # Weather (if available)
+        if race_weather:
+            with info_cols[3]:
+                st.markdown("**Weather**")
+                temp = race_weather.get("air_temp_c")
+                cloud = race_weather.get("cloud_cover")
+                precip = race_weather.get("precip_24h_mm")
+                if temp is not None:
+                    st.caption(f"Temp: {temp:+.1f}°C")
+                if cloud is not None:
+                    st.caption(f"Cloud: {int(cloud)}%")
+                if precip is not None:
+                    st.caption(f"Precip: {precip:.1f} mm")
 
 st.markdown("---")
 
