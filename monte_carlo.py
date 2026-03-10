@@ -1370,7 +1370,11 @@ def _aggregate(params: pd.DataFrame, sim: dict, is_two_run: bool) -> pd.DataFram
             d["mean_run2_bib"] = round(float(sim["run2_bibs"][:, idx].mean()),    1)
         rows.append(d)
 
-    return pd.DataFrame(rows).sort_values("p_win", ascending=False).reset_index(drop=True)
+    return (
+        pd.DataFrame(rows)
+        .sort_values(["p_win", "p_podium", "adjusted_mean_z"], ascending=[False, False, False])
+        .reset_index(drop=True)
+    )
 
 
 # ---------------------------------------------------------------------------
