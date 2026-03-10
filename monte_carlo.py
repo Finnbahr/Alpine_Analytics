@@ -1328,13 +1328,12 @@ def _aggregate(params: pd.DataFrame, sim: dict, is_two_run: bool) -> pd.DataFram
     dnf_mask = sim["combined_dnf"] if is_two_run else sim["dnf"]
     n        = len(params)
 
-    r_fin    = np.where(~dnf_mask, ranks.astype(float), np.nan)
-    with np.errstate(all="ignore"):   # silence all-NaN slice warnings
-        exp_rank = np.nanmean(r_fin,    axis=0)
-        med_rank = np.nanmedian(r_fin,  axis=0)
-    # Athletes who DNF in every simulation get rank n+1
-    exp_rank = np.where(np.isnan(exp_rank), float(n + 1), exp_rank)
-    med_rank = np.where(np.isnan(med_rank), float(n + 1), med_rank)
+    # DNF outcomes count as finishing position n+1 (last), matching p_win/p_podium convention.
+    # nanmean (excluding DNFs) would give "expected rank when finishing", which sorts
+    # high-DNF athletes ahead of reliable finishers — incorrect for display ordering.
+    r_all    = np.where(~dnf_mask, ranks.astype(float), float(n + 1))
+    exp_rank = r_all.mean(axis=0)
+    med_rank = np.median(r_all, axis=0)
     p_win    = (ranks == 1).mean(axis=0)
     p_podium = (ranks <= 3).mean(axis=0)
     p_top10  = (ranks <= 10).mean(axis=0)
