@@ -109,6 +109,388 @@ else:
     sel_homologation = None
 
 sex_label = st.sidebar.radio("Sex", ["Men (M)", "Women (F)"])
+sex_code  = "Men's" if sex_label.startswith("Men") else "Women's"
+
+st.sidebar.markdown("---")
+
+setter_name = st.sidebar.text_input(
+    "Course Setter (optional)",
+    placeholder="e.g. Ferrero Roberto",
+    help="Used as a fallback signal at venues with limited homologation data.",
+)
+setter_name = setter_name.strip() or None
+
+# Weather
+with st.sidebar.expander("Weather Conditions (optional)"):
+    use_weather = st.checkbox("Include weather in simulation", value=False)
+    if use_weather:
+        w_temp  = st.slider("Air Temperature (°C)", -20, 10, -5)
+        w_cloud = st.slider("Cloud Cover (%)", 0, 100, 30)
+        w_precip = st.number_input("Precipitation last 24h (mm)", 0.0, 50.0, 0.0, step=0.5)
+        weather_dict = {
+            "air_temp_c":     float(w_temp),
+            "cloud_cover":    float(w_cloud),
+            "precip_24h_mm":  float(w_precip),
+        }
+    else:
+        weather_dict = None
+
+st.sidebar.markdown("---")
+st.sidebar.caption(
+    "**5,000 simulations** per run.  \n"
+    "Each athlete's predicted performance is drawn from their historical z-score "
+    "distribution, adjusted for course traits, bib order, recent form, venue history, "
+    "and (optionally) weather conditions."
+)
+
+# ---------------------------------------------------------------------------
+# Main — start list input
+# ---------------------------------------------------------------------------
+
+st.subheader("Start List")
+
+col_info, col_tmpl = st.columns([3, 1])
+with col_info:
+    st.markdown(
+        "Upload a CSV with **Bib** and **FIS_Code** columns. "
+        "An optional **Name** column overrides FIS-lookup display names. "
+        "If only names are provided (no FIS codes), the simulator will attempt to match them."
+    )
+with col_tmpl:
+    template_csv = "Bib,FIS_Code,Name\n1,206355,ODERMATT Marco\n2,512182,MEILLARD Loic\n3,422304,KRISTOFFERSEN Henrik\n"
+    st.download_button(
+        "Download template",
+        data=template_csv,
+        file_name="start_list_template.csv",
+        mime="text/csv",
+    )
+
+uploaded = st.file_uploader(
+    "Upload start list CSV",
+    type=["csv"],
+    help="Required columns: Bib (integer), FIS_Code (integer). Name column is optional.",
+)
+
+start_list  = None
+parse_error = None
+
+if uploaded is not None:
+    try:
+        raw_df = pd.read_csv(uploaded)
+        raw_df.columns = [c.strip().lower().replace(" ", "_") for c in raw_df.columns]
+
+        if "bib" not in raw_df.columns:
+            parse_error = "CSV must have a 'Bib' column."
+        elif "fis_code" not in raw_df.columns and "name" not in raw_df.columns:
+            parse_error = "CSV must have a 'FIS_Code' or 'Name' column."
+        else:
+            raw_df["bib"] = pd.to_numeric(raw_df["bib"], errors="coerce")
+            raw_df = raw_df.dropna(subset=["bib"])
+            raw_df["bib"] = raw_df["bib"].astype(int)
+
+            if "fis_code" in raw_df.columns:
+                raw_df["fis_code"] = pd.to_numeric(raw_df["fis_code"], errors="coerce")
+                raw_df = raw_df.dropna(subset=["fis_code"])
+                raw_df["fis_code"] = raw_df["fis_code"].astype(int)
+                if "name" not in raw_df.columns:
+                    raw_df["name"] = raw_df["fis_code"].astype(str)
+            else:
+                names   = tuple(raw_df["name"].dropna().unique().tolist())
+                lookup  = lookup_athletes_by_name(names)
+                raw_df  = raw_df.merge(
+                    lookup.rename(columns={"search_name": "name",
+                                           "fis_code": "fis_code_looked_up"}),
+                    on="name", how="left",
+                )
+                raw_df["fis_code"] = pd.to_numeric(
+                    raw_df.get("fis_code_looked_up"), errors="coerce"
+                )
+                raw_df = raw_df.dropna(subset=["fis_code"])
+                raw_df["fis_code"] = raw_df["fis_code"].astype(int)
+
+            if "name" not in raw_df.columns:
+                raw_df["name"] = raw_df["fis_code"].astype(str)
+
+            start_list = (
+                raw_df[["bib", "fis_code", "name"]]
+                .drop_duplicates(subset=["bib"])
+                .sort_values("bib")
+                .reset_index(drop=True)
+            )
+
+    except Exception as e:
+        parse_error = f"Could not parse CSV: {e}"
+
+if parse_error:
+    st.error(parse_error)
+
+if start_list is not None:
+    st.markdown(
+        f"**{len(start_list)} athletes loaded** — "
+        f"{sel_disc} · {sel_race_type} · {sel_venue or '(no venue)'} · {sex_label}"
+    )
+
+    with st.expander("Preview start list"):
+        st.dataframe(start_list, use_container_width=True, hide_index=True)
+
+    can_run = sel_venue is not None
+    simulate = st.button(
+        "Run Simulation",
+        type="primary",
+        disabled=not can_run,
+    )
+
+    if not can_run:
+        st.warning("Select a venue before running.")
+
+    if simulate and can_run:
+        # Ensure fis_code is string (required by monte_carlo engine)
+        sim_list = start_list.copy()
+        sim_list["fis_code"] = sim_list["fis_code"].astype(str)
+
+        with st.spinner(f"Running 5,000 simulations for {len(sim_list)} athletes..."):
+            try:
+                predictions = mc.run_simulation(
+                    start_list        = sim_list,
+                    discipline        = sel_disc,
+                    race_type         = sel_race_type,
+                    location          = sel_venue,
+                    homologation_number = sel_homologation,
+                    setter_name       = setter_name,
+                    n_sims            = 5_000,
+                    random_seed       = 42,
+                    sex               = sex_code,
+                    weather_conditions = weather_dict,
+                )
+            except Exception as e:
+                st.error(f"Simulation error: {e}")
+                predictions = None
+
+        if predictions is not None and not predictions.empty:
+            # ----------------------------------------------------------------
+            # Summary metrics
+            # ----------------------------------------------------------------
+            st.markdown("---")
+            st.subheader("Simulation Results")
+
+            winner_row  = predictions.iloc[0]
+            top3_names  = " / ".join(predictions.head(3)["name"].tolist())
+            dnf_row     = predictions.nlargest(1, "p_dnf").iloc[0]
+
+            m1, m2, m3 = st.columns(3)
+            m1.metric(
+                "Predicted Winner",
+                winner_row["name"],
+                f"{winner_row['p_win']:.1f}% win probability",
+            )
+            m2.metric("Top-3 Favourites", top3_names)
+            m3.metric(
+                "Highest DNF Risk",
+                dnf_row["name"],
+                f"{dnf_row['p_dnf']:.1f}%",
+            )
+
+            # ----------------------------------------------------------------
+            # Results table
+            # ----------------------------------------------------------------
+            display = predictions.copy()
+            display.insert(0, "Pred. Rank", range(1, len(display) + 1))
+
+            display["P(Win)"]    = display["p_win"].round(1).astype(str) + "%"
+            display["P(Podium)"] = display["p_podium"].round(1).astype(str) + "%"
+            display["P(Top 10)"] = display["p_top10"].round(1).astype(str) + "%"
+            display["P(DNF)"]    = display["p_dnf"].round(1).astype(str) + "%"
+
+            table_cols = ["Pred. Rank", "bib", "name", "P(Win)", "P(Podium)", "P(Top 10)", "P(DNF)", "expected_rank"]
+            rename_map = {"bib": "Bib", "name": "Athlete", "expected_rank": "Exp. Rank"}
+
+            st.dataframe(
+                display[table_cols].rename(columns=rename_map),
+                use_container_width=True,
+                hide_index=True,
+            )
+
+            # ----------------------------------------------------------------
+            # Win probability chart (top 15)
+            # ----------------------------------------------------------------
+            st.markdown("#### Win Probability — Top 15")
+
+            chart_df = predictions.head(15).sort_values("p_win", ascending=True)
+
+            fig = go.Figure()
+            fig.add_trace(go.Bar(
+                y     = chart_df["name"],
+                x     = chart_df["p_podium"],
+                name  = "P(Podium)",
+                orientation = "h",
+                marker_color = "steelblue",
+                opacity = 0.45,
+                hovertemplate = "<b>%{y}</b><br>P(Podium): %{x:.1f}%<extra></extra>",
+            ))
+            fig.add_trace(go.Bar(
+                y     = chart_df["name"],
+                x     = chart_df["p_win"],
+                name  = "P(Win)",
+                orientation = "h",
+                marker_color = "navy",
+                opacity = 0.85,
+                hovertemplate = "<b>%{y}</b><br>P(Win): %{x:.1f}%<extra></extra>",
+            ))
+            fig.update_layout(
+                barmode  = "overlay",
+                xaxis    = dict(title="Probability (%)", range=[0, min(100, chart_df["p_podium"].max() * 1.3)]),
+                yaxis    = dict(title="", automargin=True),
+                legend   = dict(orientation="h", y=-0.15),
+                height   = max(320, 28 * len(chart_df)),
+                margin   = dict(l=170, r=40, t=20, b=60),
+                plot_bgcolor  = "white",
+                paper_bgcolor = "white",
+            )
+            fig.update_xaxes(showgrid=True, gridcolor="#eee")
+            fig.update_yaxes(showgrid=False)
+            st.plotly_chart(fig, use_container_width=True)
+
+            # ----------------------------------------------------------------
+            # DNF chart (only if any athlete >= 2%)
+            # ----------------------------------------------------------------
+            if predictions["p_dnf"].max() >= 2.0:
+                st.markdown("#### DNF Probability by Athlete")
+                dnf_chart = predictions.sort_values("p_dnf", ascending=True)
+                fig2 = go.Figure(go.Bar(
+                    y     = dnf_chart["name"],
+                    x     = dnf_chart["p_dnf"],
+                    orientation  = "h",
+                    marker_color = "tomato",
+                    opacity = 0.75,
+                    hovertemplate = "<b>%{y}</b><br>DNF probability: %{x:.1f}%<extra></extra>",
+                ))
+                max_dnf = dnf_chart["p_dnf"].max()
+                fig2.update_layout(
+                    xaxis  = dict(title="DNF Probability (%)", range=[0, min(100, max_dnf * 1.25)]),
+                    yaxis  = dict(automargin=True),
+                    height = max(300, 18 * len(dnf_chart)),
+                    margin = dict(l=170, r=40, t=20, b=40),
+                    plot_bgcolor  = "white",
+                    paper_bgcolor = "white",
+                )
+                fig2.update_xaxes(showgrid=True, gridcolor="#eee")
+                fig2.update_yaxes(showgrid=False)
+                st.plotly_chart(fig2, use_container_width=True)
+
+            # ----------------------------------------------------------------
+            # Factor breakdown
+            # ----------------------------------------------------------------
+            adj_cols = [
+                "name", "base_mean_z", "course_adj", "bib_adj",
+                "momentum_adj", "field_adj", "venue_adj", "weather_adj",
+                "adjusted_mean_z",
+            ]
+            available = [c for c in adj_cols if c in predictions.columns]
+
+            if len(available) > 2:
+                with st.expander("Factor Breakdown"):
+                    st.caption(
+                        "All values in z-score units (σ). Positive = faster than average. "
+                        "adjusted_mean_z = base_mean_z + sum of all adjustments."
+                    )
+                    breakdown = predictions[available].copy()
+                    rename_breakdown = {
+                        "name":           "Athlete",
+                        "base_mean_z":    "Base Form",
+                        "course_adj":     "Course",
+                        "bib_adj":        "Bib",
+                        "momentum_adj":   "Momentum",
+                        "field_adj":      "Field Quality",
+                        "venue_adj":      "Venue",
+                        "weather_adj":    "Weather",
+                        "adjusted_mean_z": "Adjusted Mean",
+                    }
+                    breakdown = breakdown.rename(columns=rename_breakdown)
+                    # Round numeric columns
+                    num_cols = [c for c in breakdown.columns if c != "Athlete"]
+                    breakdown[num_cols] = breakdown[num_cols].round(3)
+                    st.dataframe(breakdown, use_container_width=True, hide_index=True)
+
+else:
+    st.info(
+        "Select a discipline, race type, and venue in the sidebar, "
+        "then upload a start list CSV to begin."
+    )
+
+@st.cache_data(ttl=604800)
+def load_courses(discipline: str) -> pd.DataFrame:
+    """Venues with at least 1 race for this discipline."""
+    df = mc.list_courses(discipline=discipline, min_races=1)
+    return df.sort_values("location")
+
+
+@st.cache_data(ttl=604800)
+def lookup_athletes_by_name(names: tuple) -> pd.DataFrame:
+    if not names:
+        return pd.DataFrame(columns=["search_name", "fis_code", "name"])
+    rows = []
+    for n in names:
+        result = query("""
+            SELECT DISTINCT ON (fis_code) fis_code, name
+            FROM athlete_aggregate.hot_streak
+            WHERE LOWER(name) LIKE LOWER(:pattern)
+            LIMIT 1
+        """, {"pattern": f"%{n.strip()}%"})
+        if not result.empty:
+            rows.append({"search_name": n,
+                         "fis_code": result.iloc[0]["fis_code"],
+                         "name":     result.iloc[0]["name"]})
+        else:
+            rows.append({"search_name": n, "fis_code": None, "name": n})
+    return pd.DataFrame(rows)
+
+
+# ---------------------------------------------------------------------------
+# Sidebar — race setup
+# ---------------------------------------------------------------------------
+
+st.sidebar.header("Race Setup")
+
+DISCIPLINES = ["Slalom", "Giant Slalom", "Super G", "Downhill", "Alpine Combined"]
+RACE_TYPES  = ["World Cup", "Europa Cup", "FIS", "National Championship"]
+
+sel_disc      = st.sidebar.selectbox("Discipline", DISCIPLINES)
+sel_race_type = st.sidebar.selectbox("Race Type", RACE_TYPES)
+
+# Venue — driven by discipline
+courses_df = load_courses(sel_disc)
+venue_names = courses_df["location"].tolist() if not courses_df.empty else []
+
+if venue_names:
+    sel_venue = st.sidebar.selectbox("Venue", venue_names)
+
+    # All homologation numbers for this venue + discipline
+    venue_rows = courses_df[courses_df["location"] == sel_venue].copy()
+    homos = venue_rows["homologation_number"].dropna().astype(str).unique().tolist()
+
+    if len(homos) > 1:
+        # Show race count alongside each number so user can pick the right course
+        homo_labels = []
+        for h in homos:
+            rc = venue_rows[venue_rows["homologation_number"].astype(str) == h]["race_count"].sum()
+            homo_labels.append(f"{h}  ({rc} races)")
+        sel_homo_label = st.sidebar.selectbox(
+            "Homologation Number",
+            homo_labels,
+            help="Multiple courses exist at this venue. Select the specific homologation number to use.",
+        )
+        sel_homologation = sel_homo_label.split("  (")[0]
+    elif len(homos) == 1:
+        sel_homologation = homos[0]
+        st.sidebar.caption(f"Homologation: {sel_homologation}")
+    else:
+        sel_homologation = None
+else:
+    st.sidebar.warning("No venues found for this discipline.")
+    sel_venue        = None
+    sel_homologation = None
+
+sex_label = st.sidebar.radio("Sex", ["Men (M)", "Women (F)"])
 sex_code  = "M" if sex_label.startswith("Men") else "F"
 
 st.sidebar.markdown("---")
