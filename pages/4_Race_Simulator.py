@@ -281,13 +281,13 @@ if start_list is not None:
             m1.metric(
                 "Predicted Winner",
                 winner_row["name"],
-                f"{winner_row['p_win']*100:.1f}% win probability",
+                f"{winner_row['p_win']:.1f}% win probability",
             )
             m2.metric("Top-3 Favourites", top3_names)
             m3.metric(
                 "Highest DNF Risk",
                 dnf_row["name"],
-                f"{dnf_row['p_dnf']*100:.1f}%",
+                f"{dnf_row['p_dnf']:.1f}%",
             )
 
             # ----------------------------------------------------------------
@@ -296,10 +296,10 @@ if start_list is not None:
             display = predictions.copy()
             display.insert(0, "Pred. Rank", range(1, len(display) + 1))
 
-            display["P(Win)"]    = (display["p_win"]    * 100).round(1).astype(str) + "%"
-            display["P(Podium)"] = (display["p_podium"] * 100).round(1).astype(str) + "%"
-            display["P(Top 10)"] = (display["p_top10"]  * 100).round(1).astype(str) + "%"
-            display["P(DNF)"]    = (display["p_dnf"]    * 100).round(1).astype(str) + "%"
+            display["P(Win)"]    = display["p_win"].round(1).astype(str) + "%"
+            display["P(Podium)"] = display["p_podium"].round(1).astype(str) + "%"
+            display["P(Top 10)"] = display["p_top10"].round(1).astype(str) + "%"
+            display["P(DNF)"]    = display["p_dnf"].round(1).astype(str) + "%"
 
             table_cols = ["Pred. Rank", "bib", "name", "P(Win)", "P(Podium)", "P(Top 10)", "P(DNF)", "expected_rank"]
             rename_map = {"bib": "Bib", "name": "Athlete", "expected_rank": "Exp. Rank"}
@@ -338,7 +338,7 @@ if start_list is not None:
             ))
             fig.update_layout(
                 barmode  = "overlay",
-                xaxis    = dict(title="Probability (%)", range=[0, min(100, chart_df["p_podium"].max() * 130)]),
+                xaxis    = dict(title="Probability (%)", range=[0, min(100, chart_df["p_podium"].max() * 1.3)]),
                 yaxis    = dict(title="", automargin=True),
                 legend   = dict(orientation="h", y=-0.15),
                 height   = max(320, 28 * len(chart_df)),
@@ -353,7 +353,7 @@ if start_list is not None:
             # ----------------------------------------------------------------
             # DNF chart (only if any athlete >= 2%)
             # ----------------------------------------------------------------
-            if (predictions["p_dnf"] * 100).max() >= 2.0:
+            if predictions["p_dnf"].max() >= 2.0:
                 st.markdown("#### DNF Probability by Athlete")
                 dnf_chart = predictions.sort_values("p_dnf", ascending=True)
                 fig2 = go.Figure(go.Bar(
