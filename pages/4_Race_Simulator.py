@@ -273,35 +273,47 @@ if start_list is not None:
             st.markdown("---")
             st.subheader("Simulation Results")
 
-            winner_row  = predictions.iloc[0]
-            top3_names  = " / ".join(predictions.head(3)["name"].tolist())
-            dnf_row     = predictions.nlargest(1, "p_dnf").iloc[0]
+            winner_row   = predictions.iloc[0]
+            # Last names only so they fit in the metric card
+            top3_lastnames = " / ".join(n.split()[-1] for n in predictions.head(3)["name"].tolist())
+
+            # Breakout Pick: athlete with the biggest gap between start bib rank
+            # and predicted rank (i.e. biggest outsider the model likes)
+            _pr = predictions.reset_index(drop=True)
+            _pr["_pred_rank"] = range(1, len(_pr) + 1)
+            _pr["_bib_rank"]  = _pr["bib"].rank(method="min").astype(int)
+            _pr["_improvement"] = _pr["_bib_rank"] - _pr["_pred_rank"]
+            _outsiders = _pr[_pr["_bib_rank"] > 5]
+            if not _outsiders.empty and _outsiders["_improvement"].max() > 0:
+                _breakout = _outsiders.nlargest(1, "_improvement").iloc[0]
+                breakout_label = f"Bib {int(_breakout['bib'])} → Pred. {int(_breakout['_pred_rank'])}"
+                breakout_name  = _breakout["name"]
+            else:
+                _breakout      = predictions.iloc[1]
+                breakout_label = f"{_breakout['p_win']:.1f}% win probability"
+                breakout_name  = _breakout["name"]
 
             m1, m2, m3 = st.columns(3)
             m1.metric(
                 "Predicted Winner",
                 winner_row["name"],
-                f"{winner_row['p_win']:.1f}% win probability",
+                f"{min(winner_row['p_win'], 99.9):.1f}% win probability",
             )
-            m2.metric("Top-3 Favourites", top3_names)
-            m3.metric(
-                "Highest DNF Risk",
-                dnf_row["name"],
-                f"{dnf_row['p_dnf']:.1f}%",
-            )
+            m2.metric("Favorites", top3_lastnames)
+            m3.metric("Breakout Pick", breakout_name, breakout_label)
 
             # ----------------------------------------------------------------
             # Results table
             # ----------------------------------------------------------------
             display = predictions.copy()
-            display.insert(0, "Pred. Rank", range(1, len(display) + 1))
+            display.insert(0, "#", range(1, len(display) + 1))
 
-            display["P(Win)"]    = display["p_win"].round(1).astype(str) + "%"
-            display["P(Podium)"] = display["p_podium"].round(1).astype(str) + "%"
-            display["P(Top 10)"] = display["p_top10"].round(1).astype(str) + "%"
-            display["P(DNF)"]    = display["p_dnf"].round(1).astype(str) + "%"
+            display["P(Win)"]    = display["p_win"].clip(upper=99.9).round(1).astype(str) + "%"
+            display["P(Podium)"] = display["p_podium"].clip(upper=99.9).round(1).astype(str) + "%"
+            display["P(Top 10)"] = display["p_top10"].clip(upper=99.9).round(1).astype(str) + "%"
+            display["P(DNF)"]    = display["p_dnf"].clip(upper=99.9).round(1).astype(str) + "%"
 
-            table_cols = ["Pred. Rank", "bib", "name", "P(Win)", "P(Podium)", "P(Top 10)", "P(DNF)", "expected_rank"]
+            table_cols = ["#", "bib", "name", "P(Win)", "P(Podium)", "P(Top 10)", "P(DNF)", "expected_rank"]
             rename_map = {"bib": "Bib", "name": "Athlete", "expected_rank": "Exp. Rank"}
 
             st.dataframe(
