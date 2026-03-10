@@ -81,13 +81,28 @@ venue_names = courses_df["location"].tolist() if not courses_df.empty else []
 
 if venue_names:
     sel_venue = st.sidebar.selectbox("Venue", venue_names)
-    # Look up homologation number for the selected venue
-    venue_row = courses_df[courses_df["location"] == sel_venue]
-    sel_homologation = (
-        str(venue_row.iloc[0]["homologation_number"])
-        if not venue_row.empty and venue_row.iloc[0]["homologation_number"]
-        else None
-    )
+
+    # All homologation numbers for this venue + discipline
+    venue_rows = courses_df[courses_df["location"] == sel_venue].copy()
+    homos = venue_rows["homologation_number"].dropna().astype(str).unique().tolist()
+
+    if len(homos) > 1:
+        # Show race count alongside each number so user can pick the right course
+        homo_labels = []
+        for h in homos:
+            rc = venue_rows[venue_rows["homologation_number"].astype(str) == h]["race_count"].sum()
+            homo_labels.append(f"{h}  ({rc} races)")
+        sel_homo_label = st.sidebar.selectbox(
+            "Homologation Number",
+            homo_labels,
+            help="Multiple courses exist at this venue. Select the specific homologation number to use.",
+        )
+        sel_homologation = sel_homo_label.split("  (")[0]
+    elif len(homos) == 1:
+        sel_homologation = homos[0]
+        st.sidebar.caption(f"Homologation: {sel_homologation}")
+    else:
+        sel_homologation = None
 else:
     st.sidebar.warning("No venues found for this discipline.")
     sel_venue        = None
