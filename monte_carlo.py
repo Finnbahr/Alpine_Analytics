@@ -1372,7 +1372,7 @@ def _aggregate(params: pd.DataFrame, sim: dict, is_two_run: bool) -> pd.DataFram
 
     return (
         pd.DataFrame(rows)
-        .sort_values(["p_win", "p_podium", "adjusted_mean_z"], ascending=[False, False, False])
+        .sort_values(["p_win", "expected_rank"], ascending=[False, True])
         .reset_index(drop=True)
     )
 
