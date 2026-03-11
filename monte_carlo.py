@@ -136,8 +136,8 @@ STD_FLOOR_BY_DISC = {
 # Technical events: tighter cap because OLS fits are noisier.
 COURSE_ADJ_CAP_BY_DISC = {
     "Slalom":          1.0,
-    "Giant Slalom":    1.0,
-    "Super G":         1.2,   # venue matters more; allow slightly larger adjustment
+    "Giant Slalom":    0.8,   # tighter cap reduces OLS noise from thin course histories
+    "Super G":         0.8,   # tighter cap reduces OLS noise from thin venue histories
     "Downhill":        1.2,
     "Alpine Combined": 1.0,
 }
@@ -159,9 +159,9 @@ BIB_ADJ_CAP_BY_DISC = {
 # Speed events use smaller k (fewer starts per venue per athlete; trust sooner).
 VENUE_SHRINKAGE_BY_DISC = {
     "Slalom":          5,    # many SL races per season; require 5 prior starts to reach 50% weight
-    "Giant Slalom":    5,
-    "Super G":         3,    # fewer SG races per venue; Mayer/Feuz patterns emerge faster
-    "Downhill":        3,    # DH venue specialists are most pronounced
+    "Giant Slalom":    10,   # higher k → require more venue starts before trusting signal; reduces noise
+    "Super G":         10,   # higher k → require more venue starts before trusting signal; reduces noise
+    "Downhill":        10,   # DH venue specialists real, but need sufficient history to trust (Kitz/Bormio etc.)
     "Alpine Combined": 4,
 }
 
@@ -360,7 +360,7 @@ def load_recency_weighted_stats(
 def _default_stats(fis_codes: list[str]) -> pd.DataFrame:
     """
     Last-resort placeholders for athletes with no FIS points data at all.
-    mean_z = -0.5: below-field-average prior (a WC debutant is unlikely to win).
+    mean_z = -1.0: well-below-average prior (unknown athlete = not WC-competitive).
     std_z  = 0.70: uncertain but not a lottery ticket.
     """
     if not fis_codes:
@@ -371,7 +371,7 @@ def _default_stats(fis_codes: list[str]) -> pd.DataFrame:
     rows = [{
         "fis_code":              c,
         "name":                  c,          # caller should overwrite with start-list name
-        "weighted_mean_z":       -0.5,       # below-average prior
+        "weighted_mean_z":       -1.0,       # well-below-average prior (no FIS data → not WC-competitive)
         "weighted_std_z":        0.70,       # uncertain but not lottery-wide
         "weighted_mean_fis":     50.0,
         "race_count_discipline": 0,
@@ -452,7 +452,7 @@ def _estimate_z_from_fis_points(
             fp    = float(row["fis_points"])
             if pd.isna(fp):
                 continue        # PostgreSQL NaN float slipped through — treat as missing
-            est_z = float(np.clip(intercept + slope * fp, -2.5, 0.5))
+            est_z = float(np.clip(intercept + slope * fp, -2.5, -0.3))
             rows.append({
                 "fis_code":              code,
                 "name":                  str(row.get("name", code) or code),
@@ -1328,12 +1328,18 @@ def _aggregate(params: pd.DataFrame, sim: dict, is_two_run: bool) -> pd.DataFram
     dnf_mask = sim["combined_dnf"] if is_two_run else sim["dnf"]
     n        = len(params)
 
-    # DNF outcomes count as finishing position n+1 (last), matching p_win/p_podium convention.
-    # nanmean (excluding DNFs) would give "expected rank when finishing", which sorts
-    # high-DNF athletes ahead of reliable finishers — incorrect for display ordering.
+    # DNF-inclusive expected rank: DNF outcomes count as n+1.
+    # Used for display sorting so high-DNF athletes don't appear ahead of reliable finishers.
     r_all    = np.where(~dnf_mask, ranks.astype(float), float(n + 1))
     exp_rank = r_all.mean(axis=0)
     med_rank = np.median(r_all, axis=0)
+
+    # Conditional expected rank: mean finishing position among non-DNF sims only.
+    # Used for backtest Spearman rho (which evaluates athletes who actually finished).
+    r_fin      = np.where(~dnf_mask, ranks.astype(float), np.nan)
+    with np.errstate(all="ignore"):
+        cond_rank = np.nanmean(r_fin, axis=0)
+    cond_rank = np.where(np.isnan(cond_rank), float(n + 1), cond_rank)
     p_win    = (ranks == 1).mean(axis=0)
     p_podium = (ranks <= 3).mean(axis=0)
     p_top10  = (ranks <= 10).mean(axis=0)
@@ -1351,6 +1357,8 @@ def _aggregate(params: pd.DataFrame, sim: dict, is_two_run: bool) -> pd.DataFram
             "p_dnf":       round(float(p_dnf[idx])    * 100, 1),
             "expected_rank":
                 round(float(exp_rank[idx]), 1) if not np.isnan(exp_rank[idx]) else float(n + 1),
+            "conditional_rank":
+                round(float(cond_rank[idx]), 1),
             "median_rank":
                 int(round(float(med_rank[idx]))) if not np.isnan(med_rank[idx]) else n + 1,
             "adjusted_mean_z":       row["adjusted_mean"],
@@ -1615,13 +1623,13 @@ def backtest_race(
     else:
         try:
             from scipy.stats import spearmanr
-            rho, _ = spearmanr(matched["expected_rank"], matched["actual_rank"])
+            rho, _ = spearmanr(matched["conditional_rank"], matched["actual_rank"])
             rho    = round(float(rho), 3)
         except ImportError:
             rho = None
 
         mae = round(float(
-            (matched["expected_rank"] - matched["actual_rank"]).abs().mean()
+            (matched["conditional_rank"] - matched["actual_rank"]).abs().mean()
         ), 2)
 
         actual_top3 = set(actual.loc[actual["rank_int"] <= 3, "fis_code"])
