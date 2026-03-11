@@ -152,7 +152,7 @@ with k1:
             - A **negative** result means they lost ground relative to the average competitor
 
             Where Z-Score tells you *direction* (beat or lost to the field), Strokes Gained tells you
-            *magnitude* — by how much. Accumulated over a career, it reveals whether an athlete tends
+            *magnitude* by how much. Accumulated over a career, it reveals whether an athlete tends
             to edge out the field by small margins or deliver dominant performances, and whether their
             losses are shallow or steep. It is the most complete single-race performance measure in the platform.
             """
@@ -192,7 +192,7 @@ with k2:
             | Gate Count | 10% | Technical complexity |
             | Start Altitude | 10% | High altitude adds exposure and physical demand |
 
-            Scores are normalized **within each discipline** — a Downhill HDI of 75 and a Slalom
+            Scores are normalized **within each discipline** a Downhill HDI of 75 and a Slalom
             HDI of 75 both mean "among the harder courses in their event," but the two numbers
             are not comparable to each other. Use HDI to evaluate courses within a discipline,
             not across them.
@@ -212,7 +212,7 @@ with k2:
             A positive delta means they consistently outperform their own standard in that range.
             A negative delta means that characteristic is a relative weakness.
 
-            This is not noise — these patterns are computed across full careers and reflect genuine
+            This is not noise, these patterns are computed across full careers and reflect genuine
             structural tendencies. An athlete who is +0.4 Z in the highest gate-count bin but −0.3
             in the lowest is a technical specialist who struggles on open, fewer-gate courses.
             That information is invisible in FIS points.
@@ -233,7 +233,7 @@ with k2:
             **DNF Resilience** — When an athlete fails to finish, two questions follow: How likely are
             they to DNF again in their very next race? And when they do come back and finish, do they
             perform above or below the field average? These metrics reveal mental and physical durability
-            under adversity — qualities entirely absent from the FIS points calculation.
+            under adversity, qualities entirely absent from the FIS points calculation.
             """
         )
 
