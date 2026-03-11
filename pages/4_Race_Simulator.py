@@ -4,7 +4,7 @@ Alpine Analytics — Race Simulator
 Monte Carlo race predictor. User selects discipline, race type, venue, and sex,
 uploads a start list (CSV: Bib, FIS_Code), and the simulator runs each athlete's
 performance through the full model (form, course traits, bib, momentum, venue, weather)
-across 5,000 simulated races to produce win / podium / top-10 probabilities.
+across 2,000 simulated races to produce win / podium / top-10 probabilities.
 """
 
 import sys, os
@@ -30,6 +30,51 @@ st.set_page_config(
 )
 
 st.title("Race Simulator")
+
+with st.expander("How the Simulator Works"):
+    st.markdown(
+        """
+        The Race Simulator uses a Monte Carlo model to estimate the probability of each outcome
+        — win, podium, top 10, and DNF — for every athlete in the start list.
+
+        **Building each athlete's profile**
+
+        Every athlete's recent race results are converted into a standardized performance measure
+        (z-score) relative to the field they competed against. The model then applies six
+        adjustments on top of that baseline before any simulation runs:
+
+        - **Course profile** — how the athlete has performed on courses with similar characteristics
+          (vertical drop, gate count, pitch) to the selected venue
+        - **Bib / start number** — the statistical advantage or disadvantage of drawing an early bib,
+          based on historical bib-performance data at this location
+        - **Momentum** — whether the athlete is on an upswing or downswing based on recent results,
+          with more recent races weighted more heavily
+        - **Field quality** — a correction for the strength of the start list, since the same
+          performance means more against a deeper field
+        - **Venue** — the athlete's personal track record at this specific location across past seasons
+        - **Weather** — if conditions are entered, how each athlete has historically performed in
+          similar temperature, cloud cover, and precipitation conditions
+
+        **Running the simulation**
+
+        Once each athlete's adjusted profile is set, the model runs 2,000 independent simulated
+        races. In each simulation, every athlete draws a performance from their own distribution —
+        centred on their adjusted form, with spread reflecting their historical consistency — and
+        the field is ranked. The fraction of times each athlete finishes 1st, top 3, or top 10
+        across those 2,000 races becomes their win, podium, and top-10 probability.
+
+        **Interpreting the results**
+
+        A 35% win probability means that in similar conditions against a similar field, that athlete
+        would be expected to win roughly 35 times in every 100 starts — not that the model is wrong
+        when they finish third. All probabilities reflect the genuine uncertainty in the sport; no
+        simulation picks a guaranteed winner because none exist.
+
+        Results are sorted by win probability. The **Breakout Pick** highlights the athlete the model
+        rates significantly higher than their start bib suggests, based on the gap between their
+        bib rank and their predicted finish.
+        """
+    )
 
 # ---------------------------------------------------------------------------
 # Cached loaders
@@ -77,7 +122,7 @@ sel_race_type = st.sidebar.selectbox("Race Type", RACE_TYPES)
 
 # Venue — driven by discipline
 courses_df = load_courses(sel_disc)
-venue_names = courses_df["location"].tolist() if not courses_df.empty else []
+venue_names = courses_df["location"].drop_duplicates().tolist() if not courses_df.empty else []
 
 if venue_names:
     sel_venue = st.sidebar.selectbox("Venue", venue_names)
@@ -137,7 +182,7 @@ with st.sidebar.expander("Weather Conditions (optional)"):
 
 st.sidebar.markdown("---")
 st.sidebar.caption(
-    "**5,000 simulations** per run.  \n"
+    "**2,000 simulations** per run.  \n"
     "Each athlete's predicted performance is drawn from their historical z-score "
     "distribution, adjusted for course traits, bib order, recent form, venue history, "
     "and (optionally) weather conditions."
@@ -248,7 +293,7 @@ if start_list is not None:
         sim_list = start_list.copy()
         sim_list["fis_code"] = sim_list["fis_code"].astype(str)
 
-        with st.spinner(f"Running 5,000 simulations for {len(sim_list)} athletes..."):
+        with st.spinner(f"Running 2,000 simulations for {len(sim_list)} athletes..."):
             try:
                 predictions = mc.run_simulation(
                     start_list        = sim_list,
@@ -257,7 +302,7 @@ if start_list is not None:
                     location          = sel_venue,
                     homologation_number = sel_homologation,
                     setter_name       = setter_name,
-                    n_sims            = 5_000,
+                    n_sims            = 2_000,
                     random_seed       = 42,
                     sex               = sex_code,
                     weather_conditions = weather_dict,
@@ -328,7 +373,7 @@ if start_list is not None:
                     "P(Podium)":  st.column_config.TextColumn("P(Podium)",   help="Probability of finishing in the top 3"),
                     "P(Top 10)":  st.column_config.TextColumn("P(Top 10)",   help="Probability of finishing in the top 10"),
                     "P(DNF)":     st.column_config.TextColumn("P(DNF)",      help="Probability of not finishing (DNF / DSQ)"),
-                    "Exp. Rank":  st.column_config.NumberColumn("Exp. Rank", help="Average simulated finishing position across all 5,000 races — lower is better", format="%.1f"),
+                    "Exp. Rank":  st.column_config.NumberColumn("Exp. Rank", help="Average simulated finishing position across all 2,000 races — lower is better", format="%.1f"),
                 },
             )
 
