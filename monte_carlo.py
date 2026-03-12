@@ -62,17 +62,28 @@ logging.basicConfig(level=logging.INFO,
 N_SIMS            = 10_000
 MOMENTUM_WEIGHT   = 0.15    # fraction of momentum_z applied to adjusted mean
 
-# Form-trajectory and consistency feature constants
+# ── New feature constants (test) ──────────────────────────────────────────────
 SLOPE_WEIGHT      = 14.0    # days — extrapolate trend 14 days forward
 SLOPE_CAP         = 0.25    # max ±0.25 z contribution from form trajectory
 BOUNCE_WEIGHT     = 0.25    # weight on bounce_back_z_score when athlete had recent DNF
+MEAN_SHRINK_K     = 3       # Bayesian shrinkage: wm_z * n/(n+K); K=3 → n=10 retains 77%, n=1 retains 25%
 
-# Per-discipline feature gates — A/B tested (2026-03-11)
-# Slope + bounce together give SL: rho +0.014, MAE -0.53, winner +4.2pp
-# Slope alone hurts GS (-8.3pp winner); no features for GS/SG/DH.
-_SLOPE_ENABLED  = {"Slalom"}     # form trajectory signal; SL only
-_BOUNCE_ENABLED = {"Slalom"}     # re_dnf_rate + bounce_back_z_score; SL only
+# CV-based std scaling: athletes with higher career std get wider simulation distributions.
+# Uses std_race_z_score (all-time) relative to population median for the discipline.
+CV_WEIGHT         = 0.4     # blending weight; 0 = no effect, 1 = full scale
+CV_SCALE_MIN      = 0.80    # minimum std multiplier
+CV_SCALE_MAX      = 1.35    # maximum std multiplier
+CV_POP_STD        = {       # population median std_race_z_score (from performance_consistency_career, WC, ≥5 races)
+    "Slalom":        0.67,
+    "Giant Slalom":  0.66,
+    "Super G":       0.70,
+    "Downhill":      0.75,
+}
 
+# Per-discipline feature gates — controls which new signals are active.
+_SLOPE_ENABLED  = {"Slalom"}                        # A/B confirmed: slope+bounce best for SL; hurts GS
+_BOUNCE_ENABLED = {"Slalom"}                        # bounce + re_dnf only for SL
+_CV_ENABLED     = {"Slalom", "Giant Slalom"}        # testing CV std-scaling for both technical events
 DECAY_HALFLIFE    = 180     # days; default recency-weighting half-life (overridden per discipline)
 FIELD_SENSITIVITY = 0.15    # magnitude of field-quality z-adjustment (log scale)
 MIN_COURSE_RACES  = 1       # minimum races at a venue to qualify for selection
@@ -352,9 +363,9 @@ def load_recency_weighted_stats(
             wm_fp = float(fp[0])
             wstd  = 1.0
 
-        # Form trajectory slope: weighted OLS of z on days_ago.
-        # Positive slope → older races were worse → athlete is improving.
-        # Requires 3+ races; clipped at ±SLOPE_CAP in assemble_adjusted_params.
+        # Form trajectory slope: regression of z on days_ago (weighted).
+        # Positive slope → older races worse → athlete improving recently.
+        # Requires 3+ races to be meaningful; clipped at ±SLOPE_CAP when applied.
         slope = 0.0
         if len(grp) >= 3:
             d = grp["days_ago"].values.astype(float)
@@ -382,81 +393,6 @@ def load_recency_weighted_stats(
         stats = pd.concat([stats, _estimate_z_from_fis_points(
             missing, discipline, sex, cutoff_date)])
     return stats
-
-
-def load_consistency_extras(
-    fis_codes: list[str],
-    discipline: str,
-    race_type: str = DEFAULT_RACE_TYPE,
-) -> pd.DataFrame:
-    """
-    Load re_dnf_rate, bounce_back_z_score, cv_race_z per athlete.
-    Returns DataFrame indexed by fis_code; missing athletes get neutral defaults.
-    """
-    codes_in = ", ".join(f"'{c}'" for c in fis_codes)
-    df = _safe_query(f"""
-        SELECT fis_code, re_dnf_rate, bounce_back_z_score, cv_race_z
-        FROM athlete_aggregate.performance_consistency_career
-        WHERE fis_code  IN ({codes_in})
-          AND discipline = :discipline
-          AND race_type  {_rt_filter(race_type)}
-    """, {"discipline": discipline})
-
-    defaults = pd.DataFrame({
-        "re_dnf_rate":         0.08,
-        "bounce_back_z_score": 0.0,
-        "cv_race_z":           0.5,
-    }, index=fis_codes)
-    defaults.index.name = "fis_code"
-
-    if not df.empty:
-        deduped = (
-            df.groupby("fis_code")[["re_dnf_rate", "bounce_back_z_score", "cv_race_z"]]
-            .mean()
-        )
-        defaults.update(deduped.astype(float))
-    return defaults
-
-
-def _load_recent_dnf_flag(
-    fis_codes: list[str],
-    discipline: str,
-    sex: str | None,
-    cutoff_date: str | None,
-) -> dict[str, bool]:
-    """
-    Returns {fis_code: True} if the athlete's most recent race in this discipline
-    before cutoff_date was a DNF or DSQ. Used to switch to re_dnf_rate.
-    """
-    if not fis_codes:
-        return {}
-    codes_in    = ", ".join(f"'{c}'" for c in fis_codes)
-    date_clause = f"AND rd.date < '{cutoff_date}'" if cutoff_date else ""
-    sex_clause  = "AND rd.sex = :sex" if sex else ""
-    params: dict = {"discipline": discipline}
-    if sex:
-        params["sex"] = sex
-
-    df = _safe_query(f"""
-        SELECT DISTINCT ON (fr.fis_code)
-            fr.fis_code::text AS fis_code,
-            fr.rank
-        FROM raw.fis_results fr
-        JOIN raw.race_details rd ON rd.race_id = fr.race_id
-        WHERE fr.fis_code::text IN ({codes_in})
-          AND rd.discipline = :discipline
-          AND rd.race_type  {_rt_filter(DEFAULT_RACE_TYPE)}
-          {sex_clause}
-          {date_clause}
-        ORDER BY fr.fis_code, rd.date DESC
-    """, params)
-
-    result: dict[str, bool] = {}
-    if not df.empty:
-        for _, row in df.iterrows():
-            r = str(row["rank"]).upper()
-            result[str(row["fis_code"])] = r.startswith("DNF") or r.startswith("DSQ")
-    return result
 
 
 def _default_stats(fis_codes: list[str]) -> pd.DataFrame:
@@ -636,6 +572,80 @@ def load_dnf_rates(
         deduped = df.groupby("fis_code")["dnf_rate"].mean()
         s.update(deduped.astype(float))
     return s
+
+
+def load_consistency_extras(
+    fis_codes: list[str],
+    discipline: str,
+    race_type: str = DEFAULT_RACE_TYPE,
+) -> pd.DataFrame:
+    """
+    Load re_dnf_rate, bounce_back_z_score, cv_race_z, std_race_z_score per athlete.
+    Returns DataFrame indexed by fis_code; missing athletes get neutral defaults.
+    """
+    codes_in = ", ".join(f"'{c}'" for c in fis_codes)
+    df = _safe_query(f"""
+        SELECT fis_code, re_dnf_rate, bounce_back_z_score, cv_race_z, std_race_z_score
+        FROM athlete_aggregate.performance_consistency_career
+        WHERE fis_code  IN ({codes_in})
+          AND discipline = :discipline
+          AND race_type  {_rt_filter(race_type)}
+    """, {"discipline": discipline})
+
+    defaults = pd.DataFrame({
+        "re_dnf_rate":         0.08,
+        "bounce_back_z_score": 0.0,
+        "cv_race_z":           0.5,
+        "std_race_z_score":    float("nan"),   # NaN → no CV scaling applied
+    }, index=fis_codes)
+    defaults.index.name = "fis_code"
+
+    if not df.empty:
+        cols = ["re_dnf_rate", "bounce_back_z_score", "cv_race_z", "std_race_z_score"]
+        deduped = df.groupby("fis_code")[cols].mean()
+        defaults.update(deduped.astype(float))
+    return defaults
+
+
+def _load_recent_dnf_flag(
+    fis_codes: list[str],
+    discipline: str,
+    sex: str | None,
+    cutoff_date: str | None,
+) -> dict[str, bool]:
+    """
+    Returns {fis_code: True} if the athlete's most recent race in this discipline
+    before cutoff_date was a DNF or DSQ. Used to switch to re_dnf_rate.
+    """
+    if not fis_codes:
+        return {}
+    codes_in    = ", ".join(f"'{c}'" for c in fis_codes)
+    date_clause = f"AND rd.date < '{cutoff_date}'" if cutoff_date else ""
+    sex_clause  = "AND rd.sex = :sex" if sex else ""
+    params: dict = {"discipline": discipline}
+    if sex:
+        params["sex"] = sex
+
+    df = _safe_query(f"""
+        SELECT DISTINCT ON (fr.fis_code)
+            fr.fis_code::text AS fis_code,
+            fr.rank
+        FROM raw.fis_results fr
+        JOIN raw.race_details rd ON rd.race_id = fr.race_id
+        WHERE fr.fis_code::text IN ({codes_in})
+          AND rd.discipline = :discipline
+          AND rd.race_type  {_rt_filter(DEFAULT_RACE_TYPE)}
+          {sex_clause}
+          {date_clause}
+        ORDER BY fr.fis_code, rd.date DESC
+    """, params)
+
+    result: dict[str, bool] = {}
+    if not df.empty:
+        for _, row in df.iterrows():
+            r = str(row["rank"]).upper()
+            result[str(row["fis_code"])] = r.startswith("DNF") or r.startswith("DSQ")
+    return result
 
 
 def load_momentum(
@@ -1183,8 +1193,6 @@ def assemble_adjusted_params(
                   + momentum_z × MOMENTUM_WEIGHT
                   + venue_specific_advantage   (Bayesian shrinkage toward athlete's overall mean)
                   + weather_condition_advantage (Bayesian shrinkage, capped ±0.5 total)
-                  + slope_adj                  (form trajectory; SL only)
-                  + bounce_adj                 (post-DNF bounce-back; SL only)
     """
     rows = []
     for code in fis_codes:
@@ -1242,7 +1250,8 @@ def assemble_adjusted_params(
         weather_adj_val = float(weather_adj.get(code, 0.0)) if weather_adj is not None else 0.0
 
         # Form slope: positive slope (dz/d_days_ago > 0) means older races were worse
-        # → athlete improving → subtract from predicted z (lower z = better convention).
+        # → athlete improving → subtract from predicted z (lower z = better in our convention).
+        # Only applied for disciplines where slope carries real signal (technical events).
         if discipline in _SLOPE_ENABLED:
             form_slope = (
                 float(athlete_stats.loc[code, "form_slope"])
@@ -1254,6 +1263,7 @@ def assemble_adjusted_params(
             slope_adj = 0.0
 
         # Recent DNF: switch to conditional re-DNF rate; apply bounce-back momentum.
+        # Only applied for disciplines where the signal is reliable (SL).
         had_recent_dnf = bool((recent_dnf_flags or {}).get(code, False))
         if discipline in _BOUNCE_ENABLED and had_recent_dnf \
                 and consistency_extras is not None and code in consistency_extras.index:
@@ -1264,13 +1274,26 @@ def assemble_adjusted_params(
             dnf_rate_val = float(dnf_rates.get(code, 0.08))
             bounce_adj   = 0.0
 
+        # CV-based std scaling: compare career std_race_z_score to discipline population median.
+        # Athletes more volatile than average get a wider simulation distribution.
+        # NaN career_std → no scaling (defaults to base_std as-is).
+        cv_scale = 1.0
+        if discipline in _CV_ENABLED and consistency_extras is not None \
+                and code in consistency_extras.index:
+            career_std = float(consistency_extras.loc[code, "std_race_z_score"])
+            if not np.isnan(career_std):
+                pop_std = CV_POP_STD.get(discipline, 0.67)
+                raw_scale = float(np.clip(career_std / pop_std, CV_SCALE_MIN, CV_SCALE_MAX))
+                cv_scale  = 1.0 + CV_WEIGHT * (raw_scale - 1.0)
+        sim_std = base_std * cv_scale
+
         rows.append({
             "fis_code":              code,
             "name":                  name,
             "bib":                   bib,
             "adjusted_mean":         round(base_mean + fq_adj + course_adj + bib_adj + mom_adj
                                            + venue_adj_val + weather_adj_val + slope_adj + bounce_adj, 4),
-            "base_std":              round(base_std, 4),
+            "base_std":              round(sim_std, 4),
             "dnf_rate":              dnf_rate_val,
             # Breakdown columns for transparency / debugging
             "base_mean":             round(base_mean, 4),
@@ -1283,6 +1306,7 @@ def assemble_adjusted_params(
             "slope_adj":             round(slope_adj, 4),
             "bounce_adj":            round(bounce_adj, 4),
             "had_recent_dnf":        had_recent_dnf,
+            "cv_scale":              round(cv_scale, 4),
             "race_count_discipline": race_count,
         })
 
@@ -1625,6 +1649,8 @@ def run_simulation(
         nonzero = (weather_adv != 0).sum()
         logger.info("Weather adjustment applied: %d athletes adjusted.", nonzero)
 
+    # New signals: consistency extras (re_dnf_rate, bounce_back_z, cv_race_z)
+    # and recent-DNF flag (last race was DNF/DSQ → switch to conditional DNF rate).
     consistency_extras = load_consistency_extras(fis_codes, discipline, race_type)
     recent_dnf_flags   = _load_recent_dnf_flag(fis_codes, discipline, sex, cutoff_date)
 
