@@ -23,6 +23,18 @@ st.set_page_config(
     layout="wide",
 )
 
+# ── Password gate ───────────────────────────────────────────────────────────
+if not st.session_state.get("xgb_auth"):
+    st.title("XGBoost Race Predictor")
+    pwd = st.text_input("Password", type="password")
+    if pwd == "Plymouthskinng1":
+        st.session_state["xgb_auth"] = True
+        st.rerun()
+    elif pwd:
+        st.error("Incorrect password.")
+    st.stop()
+# ────────────────────────────────────────────────────────────────────────────
+
 st.title("XGBoost Race Predictor")
 
 with st.expander("How This Model Works"):
